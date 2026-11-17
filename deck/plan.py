@@ -232,6 +232,14 @@ def _validate(data: dict, facts: list[Fact], pics: list[Picture],
         raise ValueError("模型没有产出可用的页面")
     if slides[0].layout != "title":
         slides.insert(0, Slide(layout="title", title=deck_title or data.get("deck_title") or "汇报"))
+    # A second title page in the middle of a deck is the single loudest tell
+    # that a machine laid it out. There is exactly one cover and exactly one
+    # closing; anything else that claims to be a cover becomes a claim page.
+    for i, s in enumerate(slides):
+        if i == 0:
+            continue
+        if s.layout == "title":
+            s.layout = "closing" if i == len(slides) - 1 else "bullets"
     sub = str(data.get("subtitle") or "").strip()
     if _echo(sub, ask):
         sub = ""
