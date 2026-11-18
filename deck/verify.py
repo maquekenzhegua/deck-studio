@@ -7,7 +7,14 @@ Nobody notices until the CFO asks where it came from.
 So after planning, every figure on every slide is traced back to a computed
 fact. Anything untraceable is an error with a slide number, not a warning.
 
-Overflow is checked too — python-pptx will happily render text outside its box
+Three more checks earn their keep, because they are the difference between
+"correct" and "reads like a person made it":
+
+* a headline that ends in 分析/情况/概述 is a label, not a claim;
+* three slides in a row with the same layout is a template, not a deck;
+* text that needs more lines than the box has.
+
+Overflow matters because python-pptx will happily render text outside its box
 and you only find out when the deck is projected.
 """
 
@@ -16,27 +23,33 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from pptx.util import Inches, Pt
-
 from .compute import Fact
-from .plan import Plan
+from .plan import Plan, is_noun_phrase
 from .render import subst
 from .text import estimate_lines
-from .theme import CONTENT_W
+from .theme import CONTENT_W, FS_BODY, FS_TITLE
 
 NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
 UNIT_AFTER = re.compile(r"^\s*(万|亿|%|倍|个百分点)")
 YEAR = re.compile(r"^(19|20)\d{2}$")
 
+# Layouts that carry a figure and therefore must bind a fact.
+NEEDS_FACT = ("chart", "key_figure", "table", "kpi_row")
+NEEDS_IMAGE = ("image_full", "split_image")
+
 
 @dataclass
 class Problem:
     slide: int
-    kind: str      # 'number' | 'overflow' | 'structure'
+    kind: str      # 'number' | 'overflow' | 'structure' | 'style'
     detail: str
 
     def __str__(self) -> str:
         return f"第 {self.slide} 页 [{self.kind}] {self.detail}"
+
+
+def _ids(slide) -> list[str]:
+    return [p.strip() for p in (slide.fact or "").split(",") if p.strip()]
 
 
 def _allowed(facts: list[Fact]) -> set[str]:
@@ -54,15 +67,18 @@ def _allowed(facts: list[Fact]) -> set[str]:
 
 
 def check(plan: Plan, facts: list[Fact]) -> list[Problem]:
+    fmap = {f.id: f for f in facts}
     allowed = _allowed(facts)
     problems: list[Problem] = []
 
+    run_layout, run_len = "", 0
+
     for i, s in enumerate(plan.slides, 1):
-        texts: list[tuple[str, str]] = [("标题", subst(s.title, {f.id: f for f in facts}))]
+        texts: list[tuple[str, str]] = [("标题", subst(s.title, fmap))]
         if s.note:
-            texts.append(("说明", subst(s.note, {})))
+            texts.append(("说明", subst(s.note, fmap)))
         for b in s.bullets:
-            texts.append(("要点", subst(b, {})))
+            texts.append(("要点", subst(b, fmap)))
 
         for where, text in texts:
             for m in NUM.finditer(text):
@@ -73,21 +89,45 @@ def check(plan: Plan, facts: list[Fact]) -> list[Problem]:
                 tail = text[m.end(): m.end() + 4]
                 significant = len(bare.replace(".", "")) >= 2 or UNIT_AFTER.match(tail)
                 if significant:
-                    problems.append(Problem(i, "number", f"{where}里的「{token}」找不到对应事实（原文：{text[:40]}）"))
+                    problems.append(
+                        Problem(i, "number", f"{where}里的「{token}」找不到对应事实（原文：{text[:40]}）")
+                    )
 
-        if s.layout in ("chart", "key_figure") and not s.fact:
+        ids = _ids(s)
+        if s.layout in NEEDS_FACT and not ids:
             problems.append(Problem(i, "structure", f"{s.layout} 没有绑定事实"))
-        if s.layout in ("image_full", "split_image") and not s.image:
+        if s.layout in NEEDS_FACT:
+            missing = [p for p in ids if p not in fmap]
+            if missing:
+                problems.append(Problem(i, "structure", f"引用了不存在的事实 {','.join(missing)}"))
+        if s.layout == "kpi_row" and len(ids) < 2:
+            problems.append(Problem(i, "structure", "kpi_row 至少需要 2 个事实"))
+        if s.layout in NEEDS_IMAGE and not s.image:
             problems.append(Problem(i, "structure", f"{s.layout} 没有绑定图片"))
         if len(s.bullets) > 3:
             problems.append(Problem(i, "structure", f"要点 {len(s.bullets)} 条，超过 3 条"))
 
-        # Overflow: a title may take two lines, a bullet may take two.
-        lines = estimate_lines(s.title, CONTENT_W, Pt(26))
+        # A noun-phrase headline is the clearest sign that the model had
+        # nothing to say about this page.
+        if s.layout not in ("title", "closing", "section") and is_noun_phrase(s.title):
+            problems.append(
+                Problem(i, "style", f"标题是名词短语不是判断句：「{s.title}」——换成一句结论")
+            )
+
+        # Three identical layouts in a row means the deck was assembled by a
+        # rule rather than written.
+        if s.layout == run_layout:
+            run_len += 1
+            if run_len >= 3:
+                problems.append(Problem(i, "style", f"连续 {run_len} 页都是 {s.layout}，版式要有变化"))
+        else:
+            run_layout, run_len = s.layout, 1
+
+        lines = estimate_lines(s.title, CONTENT_W, FS_TITLE)
         if lines > 2:
             problems.append(Problem(i, "overflow", f"标题需要 {lines} 行，最多 2 行"))
         for b in s.bullets:
-            n = estimate_lines(b, CONTENT_W, Pt(17))
+            n = estimate_lines(b, CONTENT_W, FS_BODY)
             if n > 2:
                 problems.append(Problem(i, "overflow", f"要点需要 {n} 行：{b[:24]}"))
     return problems

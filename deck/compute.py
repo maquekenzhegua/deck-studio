@@ -30,6 +30,7 @@ from .ingest import Bundle, Table
 
 MONEY_HINT = re.compile(r"额|金额|收入|营收|成本|利润|价格|售价|支出|预算|销售|GMV|gmv|revenue|cost|price|amount", re.I)
 COUNT_HINT = re.compile(r"数|量|单量|人数|次数|件数|台数|用户|订单|访问|点击|count|qty|volume|orders|users", re.I)
+CONVERSION = re.compile(r"转化|conversion|convert", re.I)
 RATIO_HINT = re.compile(r"率|比|占比|百分比|rate|ratio|share|pct|percent", re.I)
 # Anything measured per-unit or averaged must never be summed.
 MEAN_HINT = re.compile(r"平均|均值|单价|客单价|均价|天数|时长|周期|年龄|评分|得分|分数|人均")
@@ -67,7 +68,38 @@ class Fact:
             d["change"] = fmt.signed_pct(self.change)
         if self.points:
             d["top"] = [[str(k), round(v, 4)] for k, v in sorted(self.points, key=lambda kv: -kv[1])[:5]]
+            steps = funnel_steps(self.points)
+            if steps:
+                # A funnel's absolute counts say nothing; the step conversions
+                # do. Without them the model writes "末端转化最弱" from the
+                # counts alone and the table contradicts the headline.
+                d["funnel"] = [[nm, round(v, 4), f"转化 {r * 100:.1f}%"]
+                               for nm, v, r in steps]
+                d["bottleneck"] = _bottleneck_label(steps)
         return d
+
+
+def funnel_steps(points: list[tuple[str, float]]) -> list[tuple[str, float, float]]:
+    """(name, value, conversion-from-previous) when the sequence is a funnel.
+
+    A funnel is a strictly shrinking run of positive counts -- stages, not
+    categories. Detected from the data rather than declared, so a ranking that
+    happens to descend is not mistaken for one.
+    """
+    vals = [v for _, v in points]
+    if len(vals) < 3 or not all(v > 0 for v in vals):
+        return []
+    if not all(a > b for a, b in zip(vals, vals[1:])):
+        return []
+    out = [(points[0][0], points[0][1], 1.0)]
+    for (nm, v), (_, prev) in zip(points[1:], points):
+        out.append((nm, v, v / prev if prev else 0.0))
+    return out
+
+
+def _bottleneck_label(steps: list[tuple[str, float, float]]) -> str:
+    nm, v, r = min(steps[1:], key=lambda st: st[2])
+    return f"{nm} 阶段转化最低，{r * 100:.1f}%"
 
 
 def _classify(col: str) -> tuple[str, str]:
@@ -186,7 +218,14 @@ def _breakdown_fact(table: Table, ccol: str, vcol: str, unit: str, agg: str, idx
     if len(df) < 3:
         return None
     how = "mean" if agg == "mean" else "sum"
-    g = df.groupby(ccol)[vcol].agg(how).sort_values(ascending=False)
+    # sort=False keeps the table's row order. pandas otherwise orders groups by
+    # key, and for Chinese keys that is code point order -- 商机 before 线索 --
+    # which destroys the stage sequence a funnel is made of.
+    g_raw = df.groupby(ccol, sort=False)[vcol].agg(how)
+    # Keep the table's own row order: sorting by size makes every sequence look
+    # monotone, and monotonicity is exactly what a funnel check asks about.
+    order = [float(v) for v in g_raw.values]
+    g = g_raw.sort_values(ascending=False)
     if len(g) > 8:
         head = g.head(7)
         rest = float(g.iloc[7:].agg("mean" if how == "mean" else "sum"))
@@ -210,12 +249,21 @@ def _breakdown_fact(table: Table, ccol: str, vcol: str, unit: str, agg: str, idx
         note = ""
     share = abs(top_val) / (sum(abs(v) for v in vals) or 1)
     uniform = 1 / len(vals)
+    # A funnel is a stage sequence, and a stage sequence is the only table that
+    # carries a conversion column next to its counts. Monotonic decline alone is
+    # not evidence: a regional sales ranking also declines, and calling it a
+    # funnel makes the deck print "转化" over numbers that are not conversions.
+    conv = next((c for c in table.df.columns if c != ccol and c != vcol
+                 and isinstance(c, str) and CONVERSION.search(c)), None)
+    is_funnel = (bool(conv) and vcol != conv and len(order) >= 3
+                 and all(a > b for a, b in zip(order, order[1:])))
     return Fact(
         id=f"f{idx}", kind="breakdown",
         label=f"{vcol} 按 {ccol}{note}",
         value=f"{top_label} {_display(top_val, unit)}", raw=float(top_val),
         source=f"{table.name} · {vcol} 按 {ccol}", column=vcol, unit=unit, agg=how,
-        chart="bar", points=rows, score=(share - uniform) * 3 + 0.4,
+        chart="funnel" if is_funnel else "bar", points=rows,
+        score=(share - uniform) * 3 + 0.4,
         number=_display(top_val, unit), top=top_label,
     )
 

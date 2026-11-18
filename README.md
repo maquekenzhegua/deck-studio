@@ -5,15 +5,39 @@
 不是「输入一句话，AI 生成一套模板」。是把你手上真实的那堆东西吃进去，算清楚，然后按设计规范排出来。
 
 ```bash
-python samples/make_sample.py          # 生成示例数据
-python -m deck.cli facts samples/data  # 先看它算出了什么（不花 token）
+python samples/make_sample.py            # 生成示例数据
+python -m deck.cli facts samples/data    # 先看它算出了什么（不花 token）
+python -m deck.cli brief samples/data    # 判断这份 deck 该是什么，不够就问你
 python -m deck.cli build samples/data -o out/demo.pptx \
     --ask "给管理层看的年度经营汇报，重点讲增长来自哪里、问题在哪"
 ```
 
-## 它解决的三件事
+## 它解决的四件事
 
-### 一、输入是文件，不是一句话
+### 一、先想清楚这份 deck 是给谁看的，再动手
+
+这是所有 AI PPT 工具都跳过的一步，也是最贵的一步。
+
+你说「整理一下这些数据」，它给你一份管理层汇报——因为系统提示词里写死了「给管理层」。这个假设**没有人声明过，所以没有人能纠正**，你要翻到第四页才发现受众错了。
+
+所以受众、场合、时长、要谁点头、不能出现什么、什么算讲成功，这六个槽位在这里是显式的：每个都有取值、有依据、有置信度。
+
+```
+【需求判断】置信度 60% · ask_min
+   受众    公司管理层（总经理、销售与产品分管副总）  ← 2024 年度经营小结
+   场合    2024年度经营总结汇报会，用PPT替代《经营小结》  ← 2024 年度经营小结
+  ?时长    15–20页、约15分钟                        ← 假设
+   决策诉求  请管理层拍板2025年资源投向：加码服务、扭转华北东北  ← 连续两个季度负增长
+   禁忌    避免把36行月度明细直接搬上页、不要把华东34%包装成整体健康
+```
+
+带 `?` 的是我们自己填的，不是文件里读到的。标出来你一眼就能改。
+
+置信度低于 75% 就会挑几个问题问你，**问题全部来自固定的题库**，模型只能挑不能写——一个生成出来的问题是另一个没声明的假设。每题五段：问什么、我的判断和依据、2–4 个封闭选项、答错会怎样、你不答我就按哪个默认走。
+
+置信度低于 30% 时 `build` 直接拒绝出片（`exit 4`）。受众都不知道的 deck，写出来也不能用。
+
+### 二、输入是文件，不是一句话
 
 真实的工作是这样：三个 Excel、一份 Word 报告、一堆会议记录，领导一句「按去年那个格式」。
 
@@ -21,7 +45,7 @@ python -m deck.cli build samples/data -o out/demo.pptx \
 
 `deck/ingest.py` 直接读目录：xlsx / xlsm / xls（每个 sheet 独立成表）、csv / tsv（自动试 utf-8-sig、gb18030）、docx / md / txt、png / jpg / webp。单个文件坏了只跳过，不中断。
 
-### 二、数字必须真算，模型只负责叙事
+### 三、数字必须真算，模型只负责叙事
 
 这是 LLM 做汇报 PPT 最大的坑：**它会编数字**。你让它「总结这份销售数据」，它给你一个看起来合理但是错的分析。而且错得很自然——增长率、占比、同比，这些词它见过几百万次。
 
@@ -41,8 +65,9 @@ python -m deck.cli build samples/data -o out/demo.pptx \
 
 - **比率列被求和** —— 「同比增长」求和会得到 50.0%，「转化率」会得到 227.2%。`_classify()` 按列名判定聚合方式，比率和均值类一律 `mean`。
 - **漏斗的 100% 陷阱** —— 转化率按阶段分组时，第一阶段必然是 100%（线索转线索）。取最大值当头条等于说「一切正常」，真正的发现是最低那一环。所以顶部是 100% 时改取最低项。
+- **漏斗的绝对数陷阱** —— 只看 4200 / 1860 / 720 / 318，模型会写出「末端转化最弱」；真实的分步转化是 44.3% / 38.7% / 44.2%，最弱的是第三段。所以 `compute.funnel_steps()` 把每一步的转化率一起喂给模型，`as_prompt()` 里直接带 `bottleneck`。表格页也会自动把条形列换成「转化」列——一张漏斗里，绝对数不说明任何问题。
 
-### 三、任何第三方 API，可私有部署
+### 四、任何第三方 API，可私有部署
 
 不是「我们支持 OpenAI」。是任何 OpenAI 兼容端点：
 
@@ -95,14 +120,19 @@ deck/
   compute.py   表 → Fact。护城河②在这里
   charts.py    matplotlib 出图，不用 pptx 原生图表
   llm.py       任何 OpenAI 兼容端点，纯 urllib。护城河③在这里
+  brief.py     判断这份 deck 是什么：六槽位 + 置信度 + 题库提问
   plan.py      模型只写叙事，禁写数字
-  render.py    Plan + Fact → pptx。七个 layout
+  render.py    Plan + Fact → pptx。十个 layout
   verify.py    渲染前查：每个数字都要有来源
-  cli.py       facts / plan / build
+  audit.py     从 .pptx 实测设计规则（栅格、字号、墨迹、节奏）
+  rules.py     17 条设计规则，分 geometry / density / semantics 三层
+  cli.py       facts / brief / plan / build / audit
 samples/
   make_sample.py  生成一套示例数据（销售、区域、漏斗 + Word + 两张图）
 tests/
-  test_deck.py    14 条，全部离线，不需要 API key
+  test_deck.py    数据与渲染，全部离线
+  test_brief.py   需求判断的算术：置信度、阈值、题库筛选
+  test_audit.py   设计规则
 ```
 
 ## 测试
@@ -111,7 +141,8 @@ tests/
 python -m unittest discover -s tests -v
 ```
 
-14 条，覆盖三个承诺：比率不被求和、编造的数字被抓、复述需求被丢弃。
+51 条，全部离线，不需要 API key。覆盖的承诺：比率不被求和、编造的数字被抓、
+复述需求被丢弃、置信度低就不出片、题库里已被文件回答的问题不再问。
 
 ## 状态
 

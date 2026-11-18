@@ -166,10 +166,11 @@ def add_numbered_list(
     height: Emu,
     items: list[str],
     *,
-    size=Pt(24),
+    size=Pt(22),
     color=None,
     rule_color=None,
     number_color=None,
+    max_row=None,
 ):
     """A list of claims, one per row, separated by hairlines.
 
@@ -177,8 +178,12 @@ def add_numbered_list(
     recognisable "a model wrote this" shape. Giving each claim its own row,
     its own number and a rule above it makes the slide read as a sequence of
     assertions rather than a text dump.
+
+    `max_row` caps how tall a single row may get. Without it a three-item list
+    stretches each row to a third of the page and the text floats in the
+    middle of a band of white, which reads as a form rather than a page.
     """
-    from .theme import ACCENT, HAIRLINE, INK, FS_CAPTION
+    from .theme import ACCENT, HAIRLINE, INK, FS_SECTION
 
     color = color if color is not None else INK
     rule = rule_color if rule_color is not None else HAIRLINE
@@ -188,21 +193,24 @@ def add_numbered_list(
         return None
 
     row_h = int(float(height) / len(items))
-    num_w = Pt(34)
+    if max_row is not None:
+        row_h = min(row_h, int(max_row))
+    # The number should read as a marker, not as a footnote. It scales with
+    # the claim rather than sitting at the caption size.
+    num_size = max(FS_SECTION, Pt(size.pt * 0.62))
+    num_w = Emu(int(num_size.pt * 1.9 * 12700))
     text_x = Emu(int(left + num_w))
     text_w = Emu(int(float(width) - float(num_w)))
 
     for i, item in enumerate(items, 1):
         y = Emu(int(top) + row_h * (i - 1))
-        # Hairline above every row except the first: it is the sequence
-        # marker, and it stops the eye from reading the rows as a paragraph.
         if i > 1:
             add_rect(slide, left, Emu(int(y) - 1), width, Emu(9525), fill=rule)
-        add_text(slide, left, Emu(int(y) + int(row_h * 0.22)), num_w, Inches(0.34),
-                 f"{i:02d}", size=FS_CAPTION, color=num_color, bold=True)
-        add_text(slide, text_x, Emu(int(y) + int(row_h * 0.14)), text_w,
-                 Emu(int(row_h * 0.72)), item, size=size, color=color, line_spacing=1.28)
-    return None
+        add_text(slide, left, Emu(int(y) + int(row_h * 0.30)), num_w, Inches(0.34),
+                 f"{i:02d}", size=num_size, color=num_color, bold=True)
+        add_text(slide, text_x, Emu(int(y) + int(row_h * 0.20)), text_w,
+                 Emu(int(row_h * 0.68)), item, size=size, color=color, line_spacing=1.28)
+    return Emu(row_h * len(items))
 
 
 def add_rule(slide, left: Emu, top: Emu, width: Emu, *, color=None, height=None):

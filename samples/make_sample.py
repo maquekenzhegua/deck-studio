@@ -107,8 +107,10 @@ def make_images() -> None:
     plt.rcParams["axes.unicode_minus"] = False
     plt.rcParams["savefig.dpi"] = 200
 
-    accent, mid, pale = "#1F5AFF", "#8FA8FF", "#C9D2E3"
-    ink, muted, hair = "#11141A", "#8B939F", "#E3E6EB"
+    # Match theme.py exactly. A pasted screenshot in a different blue is
+    # the fastest way to make a deck look assembled from parts.
+    accent, mid, pale = "#16325C", "#7D95B8", "#C3CAD4"
+    ink, muted, hair = "#11141A", "#838B98", "#D8DDE5"
 
     # --- 1. regional sales, horizontal bars -------------------------------
     reg = regional().sort_values("销售额", ascending=True)

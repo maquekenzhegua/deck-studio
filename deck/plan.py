@@ -16,37 +16,59 @@ so a hallucinated id is an error, not a broken slide.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 
 from .compute import Fact
 from .ingest import Bundle, Doc, Picture
 from .llm import Client
 
-LAYOUTS = {"title", "key_figure", "chart", "bullets", "image_full", "split_image", "closing"}
+LAYOUTS = {
+    "title", "section", "key_figure", "kpi_row", "chart", "table",
+    "bullets", "image_full", "split_image", "closing",
+}
+
+# Titles that are noun phrases. "销售情况分析" tells the reader nothing; the
+# slide underneath it could say anything. A deck of these is the single
+# clearest sign that a model wrote it, because a human who knows the answer
+# writes the answer in the title.
+NOUNISH = re.compile(
+    r"(分析|概述|情况|介绍|总结|汇报|说明|展望|回顾|探讨|研究|概览|简述)$"
+)
 
 SYSTEM = """你是一位给中国公司做汇报的资深顾问。你写的不是"PPT"，是一份让人在 90 秒内做决定的材料。
 
 硬性规则，违反任何一条即为不合格：
-1. 你绝对不能自己写任何数字。需要数字时，写占位符 {{f3}}（f3 是给定事实的 id）。
+1. 你绝对不能自己写任何数字。需要数字时写占位符 {{f3}}（f3 是给定事实的 id）。
    唯一允许你直接写的数字是年份（如 2024）和序号。
-2. 每页只讲一个论点。标题是论点，不是名词短语。
-   ❌ "销售情况分析"    ✅ "华东拉动全年增长，其余区域基本持平"
-3. 要点不超过 3 条，每条不超过 28 个汉字。写不完就拆页，不要缩字号。
-4. 不要写"本页介绍了…""综上所述""随着…的发展"这类空话。
-5. 叙事顺序固定：先给结论，再给证据，最后给行动。不要目录页。
+2. 每页只讲一个论点。标题必须是完整的判断句——有主语、有谓语、有结论。
+   ❌ "销售情况分析"  ❌ "各区域表现"  ❌ "问题与挑战"
+   ✅ "华东一个区贡献了全年六成增长"  ✅ "东北在下滑，但客户数还在涨"
+3. 把全部标题从上到下连起来读，应该是一篇能独立读懂的文章。
+   如果标题串起来只是目录，说明你没有在讲结论，重写。
+4. 要点不超过 3 条，每条不超过 28 个汉字。写不完就拆页，不要缩字号。
+5. 禁止出现："本页介绍了""综上所述""随着…的发展""值得关注的是""首先/其次/最后"。
+6. 叙事顺序固定：先给结论，再给证据，最后给行动。不要目录页，不要致谢页。
 
 版式只能从这些里选：
-- title       封面，只有大标题和副标题
-- key_figure  整页只讲一个数字，配一句解释。用于最重要的那个发现
+- title       封面。大标题写这份汇报的结论，不是"XX年度汇报"这种标签
+- key_figure  整页只讲一个数字 + 一句解释。用于最重要的那个发现
+- kpi_row     3–4 个数字并排，用于一组同量级的指标。fact 写成 "f1,f2,f3"
 - chart       图表 + 最多 3 条要点。必须绑定一个 series/breakdown 事实
+- table       明细表，用于需要逐项对照的排名或构成。必须绑定一个 breakdown 事实
 - bullets     纯要点页，用于没有数据的判断
-- image_full  整页一张图，配一句说明。必须绑定一张图
+- image_full  整页一张图 + 一句说明。必须绑定一张图
 - split_image 左图右文，用于图文结合
+- section     章节分隔页。整份最多用 2 次
 - closing     结尾，给行动建议
 
 只输出 JSON，不要任何解释文字。"""
 
-USER_TMPL = """## 用户的原始要求
+USER_TMPL = """## 这份 deck 是什么
+{brief_block}
+
+## 用户的原话（只作参考，上面那段更准）
 {ask}
 
 ## 我手上有什么
@@ -63,18 +85,20 @@ USER_TMPL = """## 用户的原始要求
 
 ## 任务
 写一份 {n} 页的汇报。结构：
-1. title（封面）
-2. key_figure 或 chart —— 最重要的那个发现，结论先行
-3. 3–{body} 页证据，每页一个论点，尽量用图表或图片
-4. closing（行动建议，2–3 条）
+1. title（封面，标题就是整份材料的一句话结论）
+2. key_figure 或 kpi_row —— 最重要的那个发现，结论先行
+3. {body} 页证据，每页一个论点，优先用 chart / table / split_image
+4. closing（行动建议，2–3 条，每条是一个动词开头的动作）
 
 输出这个 JSON：
 {{
   "deck_title": "不超过 20 字",
-  "subtitle": "不超过 30 字的一句话结论。必须是这份材料自己的判断，不是复述用户的要求",
+  "subtitle": "不超过 30 字。必须是这份材料自己的判断，不是复述用户的要求",
   "slides": [
     {{"layout": "key_figure", "title": "论点句", "fact": "f3", "note": "一句话解释这个数字意味着什么"}},
+    {{"layout": "kpi_row", "title": "论点句", "fact": "f1,f2,f5", "note": "一句话"}},
     {{"layout": "chart", "title": "论点句", "fact": "f7", "bullets": ["要点一", "要点二"]}},
+    {{"layout": "table", "title": "论点句", "fact": "f9"}},
     {{"layout": "split_image", "title": "论点句", "image": "p1", "note": "一句说明"}},
     {{"layout": "bullets", "title": "论点句", "bullets": ["要点一", "要点二", "要点三"]}},
     {{"layout": "closing", "title": "接下来做什么", "bullets": ["行动一", "行动二"]}}
@@ -107,6 +131,32 @@ class Plan:
             },
             ensure_ascii=False,
             indent=2,
+        )
+
+    @classmethod
+    def from_json(cls, raw: str) -> "Plan":
+        """Rebuild from to_json output.
+
+        Exists so a plan can be edited as JSON and re-rendered without paying
+        for another model call — the whole point of separating planning from
+        rendering.
+        """
+        data = json.loads(raw)
+        slides = [
+            Slide(
+                layout=str(s.get("layout") or "bullets"),
+                title=str(s.get("title") or ""),
+                fact=s.get("fact") or None,
+                image=s.get("image") or None,
+                note=str(s.get("note") or ""),
+                bullets=[str(b) for b in (s.get("bullets") or [])],
+            )
+            for s in data.get("slides") or []
+        ]
+        return cls(
+            deck_title=str(data.get("deck_title") or "汇报"),
+            subtitle=str(data.get("subtitle") or ""),
+            slides=slides,
         )
 
 
@@ -156,12 +206,21 @@ def make(
     client: Client,
     slides: int = 6,
     deck_title: str | None = None,
+    brief=None,
 ) -> Plan:
     if not facts:
         raise ValueError("没有可引用的事实：先确保输入里有带数值列的表格")
     body = max(2, slides - 3)
+    # Without a brief there is no audience, and the old fallback ("给管理层看的
+    # 汇报") is exactly the silent assumption this module exists to kill: it
+    # was never declared, so it could never be corrected. Now an absent brief
+    # produces an explicit "unknown" line the model has to reason around.
+    brief_block = brief.block() if brief is not None else (
+        "【这份 deck 是什么】\n- 未提供：受众与决策诉求都不清楚，"
+        "请只写能从数据本身得出的结论，不要假设读者是谁。")
     user = USER_TMPL.format(
-        ask=ask or "把这份材料整理成一份给管理层看的汇报",
+        brief_block=brief_block,
+        ask=ask or "（没说）",
         inventory=_inventory(bundle),
         facts=_facts_block(facts),
         pictures=_pictures_block(bundle.pictures),
@@ -170,7 +229,12 @@ def make(
         body=body,
     )
     data = client.json(SYSTEM, user, temperature=0.25, max_tokens=2600)
-    return _validate(data, facts, bundle.pictures, deck_title, ask)
+    return _validate(data, facts, bundle.pictures, deck_title,
+                     (brief.get('decision').value if brief is not None else ask))
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"[\s，。、：；！？,.:;!?\"'“”‘’（）()【】\[\]]", "", s)
 
 
 def _echo(sub: str, ask: str) -> bool:
@@ -182,16 +246,18 @@ def _echo(sub: str, ask: str) -> bool:
     """
     if not sub or not ask:
         return False
-    import re
-    from difflib import SequenceMatcher
-
-    norm = lambda s: re.sub(r"[\s，。、：；！？,.:;!?\"'“”‘’（）()【】\[\]]", "", s)
-    a, b = norm(sub), norm(ask)
+    a, b = _norm(sub), _norm(ask)
     if not a or not b:
         return False
     if a in b or b in a:
         return True
     return SequenceMatcher(None, a, b).ratio() > 0.55
+
+
+def is_noun_phrase(title: str) -> bool:
+    """A title ending in 分析/情况/概述 is a label, not a claim."""
+    t = _norm(title)
+    return bool(t) and bool(NOUNISH.search(t))
 
 
 def _validate(data: dict, facts: list[Fact], pics: list[Picture],
@@ -209,19 +275,38 @@ def _validate(data: dict, facts: list[Fact], pics: list[Picture],
             continue
         fact = raw.get("fact")
         image = raw.get("image")
-        if layout in ("chart", "key_figure") and fact not in fact_ids:
-            # A chart slide without a valid fact cannot be rendered honestly.
+
+        if layout in ("chart", "key_figure", "table", "kpi_row") and fact:
+            # A multi-fact slide names its facts "f1,f2". Keep only the ids we
+            # actually have, and drop the slide if none survive — rendering a
+            # chart with no data behind it is the one thing this project
+            # exists to prevent.
+            keep = [p.strip() for p in str(fact).split(",") if p.strip() in fact_ids]
+            if not keep:
+                continue
+            fact = ",".join(keep)
+            # A funnel's message is its step conversion, and a bar chart of the
+            # absolute counts cannot show that -- it says "everything shrinks",
+            # which is what the reader already assumed. Route it to the table,
+            # which prints the conversion per stage.
+            if layout == "chart" and len(keep) == 1:
+                one = next((f for f in facts if f.id == keep[0]), None)
+                if one is not None and one.chart == "funnel":
+                    layout = "table"
+        elif layout in ("chart", "key_figure", "table", "kpi_row"):
             if layout == "chart":
                 continue
             fact = None
+
         if layout in ("image_full", "split_image") and image not in pic_ids:
             continue
+
         bullets = [str(b).strip() for b in (raw.get("bullets") or []) if str(b).strip()][:3]
         slides.append(
             Slide(
                 layout=layout,
                 title=title,
-                fact=fact if fact in fact_ids else None,
+                fact=fact,
                 image=image if image in pic_ids else None,
                 note=str(raw.get("note") or "").strip(),
                 bullets=bullets,
@@ -232,6 +317,7 @@ def _validate(data: dict, facts: list[Fact], pics: list[Picture],
         raise ValueError("模型没有产出可用的页面")
     if slides[0].layout != "title":
         slides.insert(0, Slide(layout="title", title=deck_title or data.get("deck_title") or "汇报"))
+
     # A second title page in the middle of a deck is the single loudest tell
     # that a machine laid it out. There is exactly one cover and exactly one
     # closing; anything else that claims to be a cover becomes a claim page.
@@ -240,6 +326,15 @@ def _validate(data: dict, facts: list[Fact], pics: list[Picture],
             continue
         if s.layout == "title":
             s.layout = "closing" if i == len(slides) - 1 else "bullets"
+
+    # Two section dividers is structure; five is padding.
+    seen = 0
+    for s in slides:
+        if s.layout == "section":
+            seen += 1
+            if seen > 2:
+                s.layout = "bullets"
+
     sub = str(data.get("subtitle") or "").strip()
     if _echo(sub, ask):
         sub = ""
