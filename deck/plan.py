@@ -83,6 +83,8 @@ USER_TMPL = """## 这份 deck 是什么
 ## 文档摘录
 {docs}
 
+{outline}
+
 ## 任务
 写一份 {n} 页的汇报。结构：
 1. title（封面，标题就是整份材料的一句话结论）
@@ -225,6 +227,7 @@ def make(
         facts=_facts_block(facts),
         pictures=_pictures_block(bundle.pictures),
         docs=_docs_block(bundle.docs),
+        outline=bundle.outline_block() or "",
         n=slides,
         body=body,
     )

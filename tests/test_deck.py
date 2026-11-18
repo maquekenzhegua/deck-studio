@@ -148,5 +148,47 @@ class Ingest(unittest.TestCase):
             self.assertEqual(len(bundle.skipped), 1)
 
 
+class TestNewFormats(unittest.TestCase):
+    """PDF and pptx: the two formats that actually show up in a work folder."""
+
+    @classmethod
+    def setUpClass(cls):
+        root = Path(__file__).resolve().parents[1] / "samples" / "data"
+        if not (root / "去年经营汇报.pptx").exists():
+            raise unittest.SkipTest("samples/data not generated; run python samples/make_sample.py")
+        cls.b = ingest.load(root)
+
+    def test_pdf_text_is_readable_not_mojibake(self):
+        pdf = [d for d in self.b.docs if d.name.endswith(".pdf")]
+        self.assertTrue(pdf, "样例 PDF 没被读到")
+        self.assertIn("行业简报", pdf[0].text)
+        self.assertIn("9.1%", pdf[0].text)
+
+    def test_deck_outline_keeps_page_order(self):
+        self.assertTrue(self.b.outlines, "样例 pptx 没被读到")
+        o = self.b.outlines[0]
+        self.assertEqual(len(o.pages), 5)
+        self.assertIn("经营汇报", o.pages[0])
+        self.assertIn("明年三件事", o.pages[-1])
+
+    def test_outline_block_reaches_the_prompt(self):
+        block = self.b.outline_block()
+        self.assertIn("已有的 deck 结构", block)
+        self.assertIn("01", block)
+
+    def test_deck_text_becomes_a_doc(self):
+        names = [d.name for d in self.b.docs]
+        self.assertIn("去年经营汇报.pptx", names)
+
+    def test_unknown_extension_is_skipped_not_fatal(self):
+        import tempfile, pathlib as pl
+        with tempfile.TemporaryDirectory() as td:
+            pl.Path(td, "note.xyz").write_text("x", encoding="utf-8")
+            pl.Path(td, "a.csv").write_text("区域,销售额\n华东,10\n华南,8\n", encoding="utf-8")
+            b = ingest.load(td)
+        self.assertEqual(len(b.tables), 1)
+        self.assertTrue(any("note.xyz" in s for s in b.skipped))
+
+
 if __name__ == "__main__":
     unittest.main()

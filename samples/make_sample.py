@@ -163,6 +163,72 @@ def make_images() -> None:
     plt.close(fig)
 
 
+def make_last_year_deck() -> None:
+    """A previous year's deck, because "按去年那个格式" points at a file.
+
+    Deliberately plain: the point of reading it is the page order and the way
+    each page is framed, not its styling.
+    """
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+    pages = [
+        ("2024 年度经营汇报", ["经营管理部 · 2025 年 1 月"]),
+        ("三句话讲完这一年", ["收入 2,502 万，同比增长 8.3%",
+                          "华东贡献三分之一增量，华北、东北拖累大盘",
+                          "智能硬件仍是基本盘，服务收入占比提升到 22%"]),
+        ("区域：华东领跑，北方承压", ["华东同比增长 34.0%，为六区最高",
+                              "华北同比 -12.0%，连续两个季度负增长"]),
+        ("产品：硬件守盘，服务增收", ["智能硬件销售额 1,278 万，占比过半",
+                              "运维服务客单价 5,042 元，高于硬件"]),
+        ("明年三件事", ["把华东打法复制到西南",
+                    "收缩东北新签，转向中小客户留存",
+                    "缩短方案阶段周期，提升签约转化"]),
+    ]
+    blank = prs.slide_layouts[6]
+    for title, bullets in pages:
+        s = prs.slides.add_slide(blank)
+        tb = s.shapes.add_textbox(Inches(0.75), Inches(0.5), Inches(11.8), Inches(0.9))
+        p = tb.text_frame.paragraphs[0]
+        p.text = title
+        p.runs[0].font.size = Pt(26)
+        p.runs[0].font.bold = True
+        if bullets:
+            bb = s.shapes.add_textbox(Inches(0.75), Inches(1.8), Inches(11.8), Inches(4.5))
+            tf = bb.text_frame
+            for i, line in enumerate(bullets):
+                para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+                para.text = line
+                para.runs[0].font.size = Pt(16)
+    prs.save(str(ROOT / "去年经营汇报.pptx"))
+
+
+def make_pdf_brief() -> None:
+    """A PDF, because half of what lands in a work folder is a PDF."""
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        return
+
+    doc = fitz.open()
+    page = doc.new_page()
+    body = (
+        "行业简报 2024 Q4\n\n"
+        "一、整体\n"
+        "企业软件支出同比增长 9.1%，其中运维服务增速 14.2%，高于硬件 3.4%。\n\n"
+        "二、区域\n"
+        "华东仍是最大市场，西南增速最快。华北受制造业投资放缓影响，出现负增长。\n\n"
+        "三、对我们的含义\n"
+        "服务收入的毛利高于硬件，建议把续约率作为明年的第一指标。\n"
+    )
+    page.insert_textbox(fitz.Rect(60, 60, 540, 760), body, fontsize=11, fontname="china-s")
+    doc.save(str(ROOT / "行业简报.pdf"))
+    doc.close()
+
+
 def main() -> None:
     ROOT.mkdir(parents=True, exist_ok=True)
     with pd.ExcelWriter(ROOT / "销售数据.xlsx", engine="openpyxl") as w:
@@ -171,6 +237,8 @@ def main() -> None:
         pipeline().to_excel(w, sheet_name="漏斗", index=False)
     make_docx()
     make_images()
+    make_last_year_deck()
+    make_pdf_brief()
     print(f"样例已生成：{ROOT}")
 
 

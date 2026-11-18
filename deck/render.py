@@ -293,7 +293,10 @@ def _chart(prs, plan: Plan, slide: Slide, facts: dict[str, Fact], idx: int) -> N
         return
 
     items = [subst(b, facts) for b in slide.bullets]
-    rail = len(items) >= 3
+    # A rail is for bullets that need to be read as a column. Three eight-word
+    # labels in a rail leave both halves of the page half-empty; they belong in
+    # one takeaway line under a full-width chart.
+    rail = len(items) >= 2 and sum(len(x) for x in items) >= 50
     if rail:
         w = col(8)
         h = BODY_H - Inches(0.30)
@@ -317,7 +320,7 @@ def _chart(prs, plan: Plan, slide: Slide, facts: dict[str, Fact], idx: int) -> N
         add_rect(s, MARGIN_X, y, Inches(0.34), Emu(19050), fill=PRIMARY)
         add_text(s, Emu(int(MARGIN_X) + int(Inches(0.52))), Emu(int(y) - int(Inches(0.10))),
                  Emu(int(CONTENT_W) - int(Inches(0.52))), Inches(0.52),
-                 items[0], size=FS_LEAD, color=INK, line_spacing=1.3)
+                 " · ".join(items[:3]), size=FS_LEAD, color=INK, line_spacing=1.3)
 
     add_text(s, MARGIN_X, FOOT_TOP - Inches(0.24), col(10), Inches(0.22),
              f"来源：{f.source.split(' · ')[0]}", size=FS_FOOT, color=MUTED)
