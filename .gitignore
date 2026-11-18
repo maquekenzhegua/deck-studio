@@ -4,3 +4,11 @@ out/
 .env
 *.log
 samples/data/
+
+# corpus: downloaded templates are large and not ours to redistribute.
+# The report and the scripts that produce it are kept -- the numbers in
+# deck/rules.py cite them.
+corpus/raw/
+corpus/index.json
+corpus/candidates.json
+!corpus/stats.json

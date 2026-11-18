@@ -68,6 +68,19 @@ class Fact:
             d["change"] = fmt.signed_pct(self.change)
         if self.points:
             d["top"] = [[str(k), round(v, 4)] for k, v in sorted(self.points, key=lambda kv: -kv[1])[:5]]
+            # Spell out counts the model would otherwise have to infer and get
+            # wrong: it wrote "华北是唯一下滑的大区" while -4.0% and -12.0% were
+            # both on the page. The number of declining points is a fact, so it
+            # belongs in the fact, not in the model's head.
+            neg = [k for k, v in self.points if v < 0]
+            pos = [k for k, v in self.points if v > 0]
+            if neg and pos:
+                d["signs"] = {
+                    "negative": [str(k) for k in neg],
+                    "positive": [str(k) for k in pos],
+                    "note": f"{len(neg)} 项为负、{len(pos)} 项为正；不要用「唯一」「全部」这类词"
+                            f"除非它真的成立",
+                }
             steps = funnel_steps(self.points)
             if steps:
                 # A funnel's absolute counts say nothing; the step conversions

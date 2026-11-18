@@ -33,6 +33,15 @@ NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
 UNIT_AFTER = re.compile(r"^\s*(万|亿|%|倍|个百分点)")
 YEAR = re.compile(r"^(19|20)\d{2}$")
 
+# Quantifiers are where a deck lies without any number being wrong. "华北是唯一
+# 下滑的大区" passed this module while -4.0% and -12.0% sat in the same chart:
+# both numbers traced to a fact, and the word 唯一 was never checked. Narrow on
+# purpose -- it only speaks when a slide binds exactly one fact with points.
+EXCLUSIVE = re.compile(r"唯一|仅有|只有.{0,6}(一|1)\s*(个|家|项)")
+ALL_OF = re.compile(r"全部|所有|均|都|无一例外")
+DOWN = re.compile(r"下滑|下降|负增长|减少|萎缩|走低")
+UP = re.compile(r"增长|上涨|上升|提升|走高")
+
 # Layouts that carry a figure and therefore must bind a fact.
 NEEDS_FACT = ("chart", "key_figure", "table", "kpi_row")
 NEEDS_IMAGE = ("image_full", "split_image")
@@ -66,6 +75,33 @@ def _allowed(facts: list[Fact]) -> set[str]:
     return ok
 
 
+def _quantifier_problems(slide, f: Fact | None, idx: int) -> list[Problem]:
+    """A superlative on a slide with several data points must be earned."""
+    if f is None or len(f.points) < 2:
+        return []
+    title = slide.title or ""
+    vals = [v for _, v in f.points]
+    negs = [v for v in vals if v < 0]
+    poss = [v for v in vals if v > 0]
+    out: list[Problem] = []
+    if EXCLUSIVE.search(title):
+        if DOWN.search(title) and len(negs) > 1:
+            out.append(Problem(idx, "number",
+                               f"标题说「唯一」下滑，但同一组数据里有 {len(negs)} 项为负"
+                               f"（{', '.join(f'{v:g}' for v in negs)}）"))
+        if UP.search(title) and len(poss) > 1 and not DOWN.search(title):
+            out.append(Problem(idx, "number",
+                               f"标题说「唯一」增长，但同一组数据里有 {len(poss)} 项为正"))
+    if ALL_OF.search(title):
+        if DOWN.search(title) and negs and poss:
+            out.append(Problem(idx, "number",
+                               f"标题说全部下滑，但 {len(poss)} 项仍在增长"))
+        if UP.search(title) and negs:
+            out.append(Problem(idx, "number",
+                               f"标题说全部增长，但 {len(negs)} 项在下滑"))
+    return out
+
+
 def check(plan: Plan, facts: list[Fact]) -> list[Problem]:
     fmap = {f.id: f for f in facts}
     allowed = _allowed(facts)
@@ -94,6 +130,9 @@ def check(plan: Plan, facts: list[Fact]) -> list[Problem]:
                     )
 
         ids = _ids(s)
+        # Quantifier check: runs on the single fact the page is about.
+        if len(ids) == 1:
+            problems.extend(_quantifier_problems(s, fmap.get(ids[0]), i))
         if s.layout in NEEDS_FACT and not ids:
             problems.append(Problem(i, "structure", f"{s.layout} 没有绑定事实"))
         if s.layout in NEEDS_FACT:

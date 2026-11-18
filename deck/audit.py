@@ -107,7 +107,13 @@ class Box:
 
     @property
     def is_bg(self) -> bool:
-        return self.area > 0.5 * CANVAS_W * CANVAS_H
+        """A decorative fill, not content that happens to be large.
+
+        Area alone misclassifies: a full-width chart is 11.8 x 4.3in, past the
+        50 sq in threshold, so a picture page read as "no content" and R04
+        measured title-to-footer at 74%. Only a shape can be a background.
+        """
+        return self.kind == "shape" and self.area > 0.5 * CANVAS_W * CANVAS_H
 
 
 @dataclass
@@ -169,12 +175,28 @@ class Report:
 
 # --- extraction -----------------------------------------------------------
 
+# Accent means "the eye is pulled here". Hues the deck uses as *structure* --
+# the hairline grey, the primary nav, the alert red -- are not accents, they are
+# chrome. Counting them made every page with rules and a primary-coloured number
+# read as over-emphasised, which is the opposite of what the rule checks.
+CHROME = {
+    "D8DDE5",   # HAIRLINE
+    "D8DBDF",   # DATA_BAR
+    "E3E6EB",   # CHART_GRID
+    "E9EEF6",   # PRIMARY_SOFT
+    "F6E9E6",   # ALERT_SOFT
+    "FFFFFF",
+}
+
+
 def _is_colourful(hex_rgb: str) -> bool:
     try:
         r, g, b = (int(hex_rgb[i:i + 2], 16) / 255 for i in (0, 2, 4))
     except (ValueError, IndexError):
         return False
-    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    if hex_rgb.upper() in CHROME:
+        return False
+    _h, l, s = colorsys.rgb_to_hls(r, g, b)
     return s > 0.18 and 0.12 < l < 0.94
 
 
@@ -266,6 +288,30 @@ def _ink(slide, boxes: list[Box]) -> float:
     return sum(sum(r) for r in weights) / (GRID_X * GRID_Y)
 
 
+def _hangs_off_a_marker(b: Box, boxes: list[Box]) -> bool:
+    """True when this text starts just right of something that IS on a line.
+
+    Numbered lists and marker-led notes are laid out as two boxes: the marker on
+    the column line, the text one indent to its right. The pair is aligned; only
+    the second box's left edge is not, so it is measured by its marker.
+    """
+    if b.kind != "text":
+        return False
+    if min(abs(b.l_in - c) for c in COL_LINES) <= R.SNAP_TOLERANCE_IN:
+        return False
+    for other in boxes:
+        if other is b or other.is_bg:
+            continue
+        if min(abs(other.l_in - c) for c in COL_LINES) > R.SNAP_TOLERANCE_IN:
+            continue
+        if other.r_in > b.l_in or other.t_in >= b.t_in + b.h_in or \
+                other.t_in + other.h_in <= b.t_in:
+            continue
+        if b.l_in - other.r_in <= 0.60:      # one indent, not a stray column
+            return True
+    return False
+
+
 def _snap(boxes: list[Box]) -> float:
     """Share of alignment edges that sit on a column line.
 
@@ -289,6 +335,12 @@ def _snap(boxes: list[Box]) -> float:
             edges.append(b.r_in)
         elif b.align == "center":
             edges.extend([b.l_in, b.r_in])
+        elif _hangs_off_a_marker(b, boxes):
+            # A hanging indent: the marker sits on the column line and the text
+            # starts one indent to its right. Measuring the text origin alone
+            # reports 62% and reads as a layout defect when the layout is the
+            # standard numbered-list pattern.
+            continue
         else:
             edges.append(b.l_in)
     if not edges:
@@ -307,10 +359,21 @@ def _centroid(boxes: list[Box]) -> tuple[float, float]:
 
 
 def _title(boxes: list[Box]) -> tuple[str, float, int, float]:
-    cands = [b for b in boxes if b.kind == "text" and b.sizes]
+    """The title is the largest text *in the header band*, not on the page.
+
+    Picking the largest text anywhere made a KPI page report its title as the
+    60pt big number, because 60 > 26. Then R04 measured the band from the KPI
+    down to the footnote and reported 12.3% for a page whose header was fine.
+    """
+    cands = [b for b in boxes if b.kind == "text" and b.sizes and not b.is_bg]
     if not cands:
         return ("", 0.0, 0, 0.0)
-    top = max(cands, key=lambda b: (max(b.sizes), -b.t_in))
+    # The title is what comes first and, among what comes first, the largest.
+    # Neither test alone works: "largest anywhere" hands a KPI page its 60pt
+    # big number, and "topmost anywhere" hands a numbered list its 01 marker.
+    first = min(b.t_in for b in cands)
+    lead = [b for b in cands if b.t_in <= first + 0.6]
+    top = max(lead, key=lambda b: (max(b.sizes), -b.t_in))
     size = max(top.sizes)
     lines = estimate_lines(top.text, Emu(top.width), Pt(size))
     return (top.text.replace("\n", " "), size, lines, top.h_in)
@@ -360,10 +423,16 @@ def _title_band(s: SlideMetrics) -> float:
     one-line box is 4% of the canvas). What the eye reads as "the header" is
     the whole empty band above the body.
     """
-    titled = [b for b in s.boxes if b.kind == "text" and s.title_size in b.sizes]
+    titled = [b for b in s.boxes
+              if b.kind == "text" and not b.is_bg and s.title_size in b.sizes]
     if not titled:
         return 0.0
     tb = min(titled, key=lambda b: b.t_in)
+    # "Below the title" means below it and visually secondary. A text box
+    # qualifies when it is set smaller than the title. A picture or chart has no
+    # type size at all, and the first version of this test skipped it -- so a
+    # chart page measured title-to-footer (74% of the canvas) and R04 fired on a
+    # page that was in fact fine.
     below = [b for b in s.boxes
              if not b.is_bg and b.top > tb.top + 0.05 * EMU
              and (b.kind != "text" or max(b.sizes or [0]) < s.title_size)
@@ -393,16 +462,19 @@ def check(rep: Report) -> list[tuple[str, int, str]]:
             out.append(("R03", s.index,
                         f"越界字号 {', '.join(f'{x:g}' for x in s.off_scale)}pt，"
                         f"阶梯为 {sorted(ALLOWED_SIZES, reverse=True)}"))
-        # A report page legitimately runs four: headline, body, caption, footer.
-        # Five means a page assembled from parts rather than designed.
-        if s.n_sizes > 4:
-            out.append(("R03", s.index, f"本页 {s.n_sizes} 种字号（>4）"))
+        # Measured: median 3 sizes per page, p90 7. Four and five are ordinary
+        # (headline, body, caption, source, footer). Past five it stops reading
+        # as a hierarchy and starts reading as a collage.
+        if s.n_sizes > 5:
+            out.append(("R03", s.index, f"本页 {s.n_sizes} 种字号（>5）"))
 
         # R04 title band: title top to the first content element below it.
         if s.role == "content" and s.title_box_h:
             ratio = _title_band(s)
             if not (R.TITLE_HEIGHT_RATIO[0] <= ratio <= R.TITLE_HEIGHT_RATIO[1]):
-                out.append(("R04", s.index, f"标题带到正文占画布 {ratio:.1%}，规范 14–18%"))
+                out.append(("R04", s.index,
+                            f"标题带到正文占画布 {ratio:.1%}，"
+                            f"规范 {R.TITLE_HEIGHT_RATIO[0]:.0%}–{R.TITLE_HEIGHT_RATIO[1]:.0%}"))
 
         # R05 line length: measure the wrap width of reading text, not of every
         # box. A one-line subtitle may be as wide as the page; a paragraph that
@@ -444,7 +516,8 @@ def check(rep: Report) -> list[tuple[str, int, str]]:
             elif not (lo <= s.chars <= hi):
                 out.append(("R09", s.index, f"{s.chars} 字，规范 {lo}–{hi}"))
             if not (R.INK_CONTENT[0] <= s.ink <= R.INK_CONTENT[1]):
-                out.append(("R08", s.index, f"墨迹 {s.ink:.0%}，规范 35–70%"))
+                out.append(("R08", s.index,
+                            f"墨迹 {s.ink:.0%}，规范 {R.INK_CONTENT[0]:.0%}–{R.INK_CONTENT[1]:.0%}"))
             if s.accents > R.EMPHASIS_PER_PAGE:
                 out.append(("R11", s.index, f"{s.accents} 处彩色强调（>2）"))
             cx, cy = s.centroid

@@ -30,24 +30,46 @@ GRID_COLUMNS = 12
 SNAP_TOLERANCE_IN = 0.02      # 1.5 px at 96 dpi — below this the eye reads a shared edge
 MARGIN_X_RATIO = (0.052, 0.062)   # 0.69–0.83 in of 13.333; theme uses 0.75
 MARGIN_Y_RATIO = (0.060, 0.080)   # 0.45–0.60 in of 7.5; theme uses 0.52
-TITLE_HEIGHT_RATIO = (0.150, 0.220)
+# The band from the title's top to the first content element below it. Derived
+# rather than measured directly: the corpus upper margin (p10 0% / median 9.9% /
+# p90 20%) is the distance to the *topmost* element, and the title occupies the
+# first ~0.6in of that, so the title block plus its leading lands at 14-24%.
+TITLE_HEIGHT_RATIO = (0.140, 0.240)
 TITLE_BODY_GAP_IN = 0.25
 MAX_BODY_COLUMNS = 9          # 8.66 in → ~32 CJK chars per line at 17 pt
 MAX_LINE_CHARS_CJK = 34
 MIN_CHART_FONT_PT = 11.0      # projector floor; 9 pt at 1080p is 3 mm tall
 
-INK_CONTENT = (0.35, 0.70)
-INK_COVER = (0.08, 0.25)
-CHARS_CONTENT = (80, 240)
-CHARS_CHART = (60, 200)
+# --- measured, not asserted -----------------------------------------------
+# The first version of these bands came from reading about deck design and was
+# wrong in both directions. corpus/analyze.py measures 11 real decks (87 content
+# pages) exported at 16:9, normalised to this canvas:
+#
+#   ink coverage   p10 12%  median 20%  p90 42%   (the old band said 35-70%)
+#   chars / page   p10 81   median 191  p90 614   (the old band said 80-240)
+#   sizes / page   median 3               p90 7   (the old cap said <=4)
+#   body text      16pt is the most common size on the canvas (116 runs)
+#
+# 35-70% ink was describing a magazine spread, not a presentation: it flagged
+# real decks as empty and it flagged our own pages as empty while the corpus
+# sat lower still. Bands now bracket the corpus, and the upper bound is generous
+# because a dense appendix page is legitimate.
+INK_CONTENT = (0.10, 0.48)
+INK_COVER = (0.05, 0.30)
+CHARS_CONTENT = (60, 400)
+CHARS_CHART = (50, 260)
 DENSITY_CV_MAX = 0.35
 EMPHASIS_PER_PAGE = 2
 ACCENTS_PER_DECK = 2
 LAYOUT_RUN_MAX = 2
 LAYOUT_SHARE_MAX = 0.40
 MIN_LAYOUTS = 4
-CENTROID_X = (0.38, 0.62)
-CENTROID_Y = (0.40, 0.58)
+# Measured on the corpus: horizontal p10 30% / median 47% / p90 53%; vertical
+# p10 32% / median 45% / p90 52%. The old band (38-62%) sat to the right of the
+# measured median -- it was describing where I *put* content, not where real
+# decks put it. Widened to bracket p10-p90 with a little room.
+CENTROID_X = (0.30, 0.60)
+CENTROID_Y = (0.33, 0.60)
 TITLE_SIMILARITY_MAX = 0.34   # char-bigram Jaccard between adjacent titles
 
 
@@ -86,7 +108,7 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "R03", "字号阶梯", "geometry",
         "每页字号集合",
-        "字号 ∈ theme 中全部 FS_* 常量 ±0.5pt；单页 ≤4 种（标题/正文/注释/页脚）",
+        "字号 ∈ theme 中全部 FS_* 常量 ±0.5pt；单页 ≤5 种（语料中位 3、p90 7；超过 5 种读作拼装）",
         "block",
         "遍历 run.font.size，去重后与 theme 的 FS_* 常量比对；阶梯从 theme 动态读取，不在规则里写死",
         "五级阶梯是 deck 的宪法（theme.py 原文），但渲染层有 6 处裸字号绕过了它："
@@ -96,7 +118,7 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "R04", "标题区比例", "geometry",
         "标题块高度与净距",
-        "标题带到正文占画布高 15–22%；标题底到正文顶 ≥0.25in",
+        "标题带到正文占画布高 14–24%；标题底到正文顶 ≥0.25in",
         "warn",
         "标题元素 top+height 与 BODY_TOP 之差",
         "标题吃太多，正文就被压成一条；吃太少，页面失去阅读入口。"
@@ -132,20 +154,22 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "R08", "墨迹覆盖", "density",
         "内容占画布面积",
-        "内容页 35–70%；封面/章节页 8–25%",
+        "内容页 10–48%；封面/章节页 5–30%",
         "warn",
         "元素包围盒并集栅格化，图片按非白像素比折算",
-        "低于 35% 读作「没内容」，高于 70% 读作「PPT 当 Word 用」。"
-        "实测 demo 内容页 9.9–14.1%，是这次「空、丑」的主因。",
+        "实测 11 份真实 deck / 87 页：p10 12%、中位 20%、p90 42%。原定的 35–70% "
+        "描述的是杂志跨页不是幻灯片——它同时把真实 deck 和本仓库的页判成「空」。"
+        "现区间按语料取 10–48%，上界放宽是因为附录页本来就密。",
     ),
     Rule(
         "R09", "单页字数", "density",
         "含标题/正文/注释/来源的汉字数",
-        "内容页 80–240；纯图表页 60–200",
+        "内容页 60–400；纯图表页 50–260",
         "warn",
         "去掉空白后计 len()",
-        "咨询正文页中位 150 字上下。demo 每页 50–68 字：只有一个断言，"
-        "没有证据层，读者拿不到「凭什么」。",
+        "实测语料中位 191 字、p90 614 字（模板占位文案，只当下限参考）。"
+        "本仓库的页中位 66 字：只有一个断言、没有证据层，读者拿不到「凭什么」，"
+        "所以字数是真问题——但 240 字的上限是拍的，语料不支持。",
     ),
     Rule(
         "R10", "密度方差", "density",

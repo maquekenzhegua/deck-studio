@@ -190,5 +190,44 @@ class TestNewFormats(unittest.TestCase):
         self.assertTrue(any("note.xyz" in s for s in b.skipped))
 
 
+class TestQuantifiers(unittest.TestCase):
+    """A deck can lie with every number correct. "华北是唯一下滑的大区"
+    shipped on a page whose own chart showed -4.0% and -12.0%; both numbers
+    traced to a fact, so the number check passed it."""
+
+    def _fact(self, **kw):
+        base = dict(
+            id="f1", kind="breakdown", label="同比", value="华东 34.0%",
+            raw=0.34, source="x.xlsx / 区域", column="同比", unit="ratio",
+            agg="mean", chart="bar", points=[("华东", 0.34), ("东北", -0.12),
+                                            ("华北", -0.04)],
+        )
+        base.update(kw)
+        return Fact(**base)
+
+    def _plan(self, title, fid="f1"):
+        from deck.plan import Plan, Slide
+        return Plan("t", "", [Slide("chart", title, fid, "", "", ["a"])])
+
+    def test_exclusive_decline_with_two_negatives_is_caught(self):
+        probs = verify.check(self._plan("华东领涨，华北是唯一下滑的大区"),
+                             [self._fact()])
+        self.assertTrue(any(p.kind == "number" and "唯一" in p.detail for p in probs))
+
+    def test_exclusive_decline_with_one_negative_passes(self):
+        f = self._fact(points=[("华东", 0.34), ("华北", -0.04), ("华南", 0.11)])
+        probs = verify.check(self._plan("华东领涨，华北是唯一下滑的大区"), [f])
+        self.assertFalse(any(p.kind == "number" for p in probs))
+
+    def test_all_up_claim_with_a_declining_point_is_caught(self):
+        probs = verify.check(self._plan("六大区全部增长"), [self._fact()])
+        self.assertTrue(any("全部" in p.detail for p in probs))
+
+    def test_scalar_fact_is_not_tested_for_quantifiers(self):
+        f = self._fact(kind="scalar", points=[])
+        probs = verify.check(self._plan("华东是唯一正增长的大区"), [f])
+        self.assertFalse(any(p.kind == "number" for p in probs))
+
+
 if __name__ == "__main__":
     unittest.main()

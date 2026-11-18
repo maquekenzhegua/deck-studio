@@ -35,9 +35,9 @@ from .text import (
 )
 from .theme import (
     ALERT, BODY_H, BODY_TOP, CONTENT_W, DATA_BAR, FS_BODY, FS_CAPTION,
-    FS_COVER, FS_FOOT,
+    FS_COVER, FS_FOOT, FS_HERO,
     GUTTER,
-    FS_KPI, FS_LEAD, FS_SECTION, FS_TITLE, HAIRLINE, INK, INK_2, MARGIN_BOTTOM,
+    FS_KPI, FS_KPI_MD, FS_LEAD, FS_SECTION, FS_TITLE, HAIRLINE, INK, INK_2, MARGIN_BOTTOM,
     MARGIN_TOP, MARGIN_X, MUTED, PAPER, PRIMARY, PRIMARY_MID, PRIMARY_SOFT,
     RULE_TOP, SLIDE_H, SLIDE_W, TITLE_H, TITLE_TOP, WHITE, col, colx,
 )
@@ -232,6 +232,12 @@ def _kpi_row(prs, plan: Plan, slide: Slide, facts: dict[str, Fact], idx: int) ->
     edge and a baseline. Cards with boxes and shadows are the template look;
     rules between aligned numbers are the report look.
 
+    Geometry rule, learned from rendering it wrong three times: content runs
+    continuously from the header down, and leftover space goes at the bottom of
+    the page. Centring the figures in the band, or pinning the closing sentence
+    to the page bottom, both put the hole in the *middle* -- which reads as a
+    layout failure rather than as breathing room.
+
     The caption under each number is suppressed when it would repeat the label
     above it -- "订单数 / 4,685 / 订单数" says the same thing twice and reads
     like a form field nobody filled in.
@@ -244,33 +250,58 @@ def _kpi_row(prs, plan: Plan, slide: Slide, facts: dict[str, Fact], idx: int) ->
         return
 
     note = subst(slide.note, facts)
-    note_h = estimate_height(note, col(10), FS_BODY, 1.45) if note else 0
-    block = Inches(1.72)
-    gap = Inches(0.46) if note else 0
-    total = int(block) + int(gap) + int(note_h)
-    top = Emu(int(BODY_TOP) + max(0, int((float(BODY_H) - total) / 2)))
-
     n = len(fs)
     span = int(12 / n)
+
+    # Pass one: size every figure, so the block height is known before drawing.
+    laid = []
     for i, f in enumerate(fs):
         x = colx(i * span)
         w = col(span - 1) if i < n - 1 else col(span)
-        if i:
-            add_rect(s, Emu(int(x) - int(Inches(0.18))), Emu(int(top) + int(Inches(0.06))),
-                     Emu(9525), Emu(int(block) - int(Inches(0.16))), fill=HAIRLINE)
         eyebrow = f.column if not f.top else f"{f.column} · {f.top}"
-        add_text(s, x, top, w, Inches(0.28), eyebrow, size=FS_CAPTION, color=MUTED)
         num = f.number or f.value
-        add_text(s, x, Emu(int(top) + int(Inches(0.36))), w, Inches(0.92),
-                 num, size=_fit(num, w, 60, 34), color=PRIMARY, bold=True,
-                 line_spacing=1.0, anchor="middle")
-        if f.label.strip() and f.label.strip() != eyebrow:
-            add_text(s, x, Emu(int(top) + int(Inches(1.28))), w, Inches(0.44),
+        pt = _fit(num, w, FS_KPI_MD.pt, 30)
+        has_label = bool(f.label.strip()) and f.label.strip() != eyebrow
+        laid.append((x, w, eyebrow, num, pt, has_label, f))
+
+    num_h = max(int(t[4].pt * 1.20 * 12700) for t in laid)
+    label_h = int(Inches(0.36))
+    block_h = num_h + (label_h if any(t[5] for t in laid) else 0)
+    block_top = Emu(int(BODY_TOP) + int(Inches(0.24)))
+
+    for i, (x, w, eyebrow, num, pt, has_label, f) in enumerate(laid):
+        if i:
+            add_rect(s, Emu(int(x) - int(Inches(0.18))),
+                     Emu(int(block_top) - int(Inches(0.06))),
+                     Emu(9525), Emu(block_h + int(Inches(0.12))), fill=HAIRLINE)
+        add_text(s, x, block_top, w, Inches(0.30), eyebrow,
+                 size=FS_CAPTION, color=MUTED)
+        ny = Emu(int(block_top) + int(Inches(0.34)))
+        add_text(s, x, ny, w, Emu(num_h), num, size=pt, color=PRIMARY,
+                 bold=True, line_spacing=1.0, anchor="middle")
+        if has_label:
+            add_text(s, x, Emu(int(ny) + int(num_h)), w, Emu(label_h),
                      f.label, size=FS_CAPTION, color=INK_2, line_spacing=1.3)
 
+    # Pass two: the takeaway goes in a filled band, not as a loose sentence.
+    # Three figures and one line cannot fill a 5in band by being spread out --
+    # spreading leaves a hole in the middle, which is what made this page read
+    # as unfinished. A conclusion band is a real element: it gives the page a
+    # bottom edge, carries the interpretation at reading size, and stops the
+    # eye before the empty space below it.
     if note:
-        add_text(s, MARGIN_X, Emu(int(top) + int(block) + int(gap)), col(10),
-                 Emu(int(note_h)), note, size=FS_BODY, color=INK_2, line_spacing=1.45)
+        note_pt = FS_LEAD
+        text_w = Emu(int(CONTENT_W) - int(Inches(0.90)))
+        note_h = estimate_height(note, text_w, note_pt, 1.45)
+        band_h = Emu(int(note_h) + int(Inches(0.72)))
+        band_y = Emu(int(block_top) + int(Inches(0.34)) + int(block_h)
+                     + int(Inches(0.52)))
+        add_rect(s, MARGIN_X, band_y, CONTENT_W, band_h, fill=PRIMARY_SOFT)
+        add_rect(s, MARGIN_X, band_y, Emu(int(Inches(0.05))), band_h, fill=PRIMARY)
+        add_text(s, Emu(int(MARGIN_X) + int(Inches(0.45))),
+                 Emu(int(band_y) + int(Inches(0.36))), text_w, Emu(int(note_h)),
+                 note, size=note_pt, color=INK, line_spacing=1.45)
+
     add_text(s, MARGIN_X, FOOT_TOP - Inches(0.30), col(10), Inches(0.22),
              f"来源：{fs[0].source.split(' · ')[0]}", size=FS_FOOT, color=MUTED)
     _footer(s, idx, plan.deck_title)
@@ -450,12 +481,16 @@ def _bullets(prs, plan: Plan, slide: Slide, facts: dict[str, Fact], idx: int) ->
     if len(items) <= 4:
         # Cap the row height so three claims do not stretch to fill the page;
         # a third of a page per sentence reads as a form, not a slide.
+        #
+        # No vertical centring. Centring leaves a hole under the title and a
+        # second hole at the bottom, and the corpus is unambiguous about where
+        # content starts: upper-margin p90 is 20% of the canvas, so real decks
+        # hang the body off the header rather than floating it mid-page.
         room = float(BODY_TOP + BODY_H) - float(y)
         row = min(Inches(1.30), Emu(int(room / len(items))))
         block = Emu(int(row) * len(items))
-        y = Emu(int(y) + int(max(0.0, (room - float(block)) / 2)))
         add_numbered_list(s, MARGIN_X, y, CONTENT_W, block, items,
-                          size=Pt(21), max_row=row)
+                          size=FS_LEAD, max_row=row)
     else:
         add_bullets(s, MARGIN_X, y, col(9), Emu(int(BODY_H) - int(Inches(0.4))),
                     items, size=Pt(17), gap=18)

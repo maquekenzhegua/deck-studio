@@ -54,7 +54,9 @@ class TestTypeScale(unittest.TestCase):
         self.assertIn(2, pages)
         self.assertEqual(rep.slides[1].off_scale, [19.0])
 
-    def test_five_sizes_on_one_slide_is_caught(self):
+    def test_five_sizes_are_within_measurement(self):
+        """The corpus runs a median of 3 sizes per page and a p90 of 7. Five is
+        an ordinary report page: headline, lead, body, caption, source."""
         path = deck([
             [TITLE,
              ("一句话引导", MX, 2.12, 8.0, 0.6, 20),
@@ -66,7 +68,24 @@ class TestTypeScale(unittest.TestCase):
         ])
         rep = audit.audit(path)
         self.assertEqual(rep.slides[0].n_sizes, 5)
-        self.assertTrue(any("5 种字号" in d for r, _, d in rep.problems if r == "R03"))
+        # 20pt and 12pt are off the theme scale, so R03 fires for that reason;
+        # what must not fire is the count rule.
+        self.assertFalse(any("种字号" in d for r, _, d in rep.problems if r == "R03"))
+
+    def test_six_sizes_on_one_slide_is_caught(self):
+        path = deck([
+            [TITLE,
+             ("一句话引导", MX, 2.12, 8.0, 0.6, 20),
+             ("正文要点", MX, 2.9, 8.0, 0.6, 14),
+             ("注释", MX, 3.7, 8.0, 0.4, 12),
+             ("小注", MX, 4.3, 8.0, 0.4, 11),
+             ("极小的标注", MX, 5.0, 8.0, 0.4, 9.5)],
+            [("结论", MX, 0.52, CW, 1.0, 26),
+             ("正文", MX, 2.12, 8.0, 0.6, 14)],
+        ])
+        rep = audit.audit(path)
+        self.assertEqual(rep.slides[0].n_sizes, 6)
+        self.assertTrue(any("6 种字号" in d for r, _, d in rep.problems if r == "R03"))
 
     def test_footer_size_is_not_counted_as_a_level(self):
         """Every page carries a 9pt page number. Counting it would make R03 a
