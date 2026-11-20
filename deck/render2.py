@@ -392,7 +392,7 @@ def section(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
             shot = False
     if shot:
         add_scrim(slide, 0, 0, SLIDE_W, SLIDE_H, _rgb(theme.dark),
-                  [(0, 82), (55, 62), (100, 80)], angle=0)
+                  [(0, 76), (55, 52), (100, 70)], angle=0)
     else:
         add_gradient(slide, 0, 0, SLIDE_W, SLIDE_H,
                      _rgb(theme.dark), _mix(theme.dark, theme.accent, 0.22), angle=20)
@@ -400,8 +400,12 @@ def section(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     num = f"{sec:02d}"
     # A 300pt numeral clipped by the page edge reads as a printing accident,
     # not a device. Keep it whole, tucked against the right margin.
+    # Over a photograph the accent numeral turns to mud; a pale numeral reads
+    # as a watermark, which is the job.
+    num_color = (_mix(theme.dark, "#FFFFFF", 0.17) if shot
+                 else _mix(theme.dark, theme.accent, 0.30))
     add_text(slide, Inches(8.15), Inches(0.52), Inches(4.75), Inches(4.6),
-             num, theme, size=Pt(264), color=_mix(theme.dark, theme.accent, 0.30),
+             num, theme, size=Pt(264), color=num_color,
              bold=True, align="left", font="headline", wrap=False)
 
     add_text(slide, MARGIN_X, Inches(2.02), Inches(6.2), Inches(0.26),
@@ -1501,7 +1505,7 @@ def closing(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme, idx
              bold=True, spacing=2.8)
     title = subst(s.title, facts)
     size = _fit(title, Inches(4.55), Inches(2.05), 40, 24, 1.05)
-    title = _wrap_clauses(title, Inches(4.55), size.pt)
+    title, size = _wrap_nice(title, Inches(4.55), size, 24)
     add_text(slide, MARGIN_X, Inches(1.02), Inches(4.90), Inches(2.1),
              title, theme, size=size, color=_rgb(theme.dark_ink), bold=True,
              font="headline", line_spacing=1.05)
@@ -1537,9 +1541,11 @@ def closing(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme, idx
 
     add_rect(slide, MARGIN_X, Inches(6.42), CONTENT_W, Emu(6350),
              _mix(theme.dark, "#FFFFFF", 0.22))
+    year = _year(plan)
+    tail = f"  ·  {year} 年经营复盘" if year else ""
     add_text(slide, MARGIN_X, Inches(6.58), Inches(7.0), Inches(0.24),
-             plan.deck_title, theme, size=Pt(9.5), color=_rgb(theme.dark_muted),
-             spacing=0.8)
+             plan.deck_title + tail, theme, size=Pt(9.5),
+             color=_rgb(theme.dark_muted), spacing=0.8)
     page_number(slide, idx, theme)
 
 
