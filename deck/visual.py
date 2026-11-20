@@ -289,6 +289,9 @@ def add_gradient(slide, left, top, width, height, c1: RGBColor, c2: RGBColor,
 def add_line(slide, x1, y1, x2, y2, color: RGBColor, width: int = 12700):
     from pptx.enum.shapes import MSO_CONNECTOR
     shp = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, x1, y1, x2, y2)
+    # Connectors inherit a themed effect list; without this a one-pixel rule
+    # renders as a grey bar with a drop shadow in LibreOffice.
+    _no_shadow(shp)
     shp.line.color.rgb = color
     shp.line.width = Emu(width)
     return shp

@@ -359,6 +359,7 @@ def heatmap(rows: list[tuple[str, list[float]]], cols: list[str], name: str, the
     accent_rgb = np.array(to_rgb(theme.accent))
     paper_rgb = np.array(to_rgb(theme.paper))
     neg_rgb = np.array(to_rgb(theme.negative))
+    ink_rgb = np.array(to_rgb(theme.ink))
     # A column that crosses zero gets a diverging ramp, not a min-max ramp:
     # colouring -12% paler than +2% says "small effect" when the sign is the
     # whole point. Everything else stays a single-hue ramp.
@@ -381,14 +382,28 @@ def heatmap(rows: list[tuple[str, list[float]]], cols: list[str], name: str, the
             # A diverging column keeps a visible floor: -4% must not read as
             # "almost nothing", the sign is the finding.
             if diverge[j]:
-                t = 0.16 + 0.62 * float(norm[i, j]) ** 0.8
+                t = 0.14 + 0.64 * float(norm[i, j]) ** 0.9
             else:
-                t = 0.10 + 0.78 * norm[i, j]
-            base = neg_rgb if (diverge[j] and matrix[i, j] < 0) else accent_rgb
+                t = 0.08 + 0.76 * norm[i, j] ** 1.15
+            # Three metrics, three visual languages: money in the brand ramp,
+            # growth diverging, a plain count in neutral ink. Painting every
+            # column in accent made the grid look like one metric repeated.
+            if diverge[j]:
+                base = neg_rgb if matrix[i, j] < 0 else accent_rgb
+            elif units[j] in ("count", "raw"):
+                base = paper_rgb + (ink_rgb - paper_rgb) * 0.62
+            else:
+                base = accent_rgb
             color = tuple(paper_rgb + (base - paper_rgb) * t)
             ax.add_patch(plt.Rectangle((j + 0.03, i + 0.06), 0.94, 0.88,
                                        facecolor=color, edgecolor="none"))
-            dark = t > 0.52
+            # Pick the text colour that wins on contrast, not a fixed
+            # brightness cut-off. Mid cells are exactly where a threshold
+            # guesses wrong and white type turns into a smudge.
+            lin = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+                   for c in color]
+            lum = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+            dark = (1.05 / (lum + 0.05)) > ((lum + 0.05) / 0.058)
             ax.text(j + 0.5, i + 0.52, _cell(matrix[i, j], units[j]),
                     ha="center", va="center", fontsize=12.5,
                     color="#FFFFFF" if dark else theme.ink,
@@ -433,24 +448,33 @@ def waterfall(steps: list[tuple[str, float]], name: str, theme: Theme, *,
     ax.tick_params(axis="y", length=0, labelsize=12, colors=theme.muted)
     # A cumulative bridge is read in 万, not in 1e6: the offset text is the
     # single most "generated" looking thing a matplotlib chart can carry.
-    ax.yaxis.set_major_formatter(
-        plt.FuncFormatter(lambda v, _: f"{v / 10000:.0f}万" if abs(v) >= 10000
-                          else f"{v:,.0f}"))
-    ax.tick_params(axis="x", length=0, labelsize=12, colors=theme.ink2, pad=4)
+    if unit == "ratio":
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v * 100:.0f}%"))
+    else:
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(
+            lambda v, _: f"{v / 10000:,.0f}万" if abs(v) >= 10000 else f"{v:,.0f}"))
+    ax.tick_params(axis="x", length=0, labelsize=11.5, colors=theme.ink2, pad=6)
     ax.grid(axis="y", color=_tint(theme.ink, 0.86, theme.paper), linewidth=1.0, alpha=.9)
     ax.set_axisbelow(True)
 
     run = 0.0
     xs, labels = [], []
+    span = max((abs(v) for _, v in steps), default=1.0) or 1.0
+    floor_h = span * 0.012  # a 2% drag must still be a bar, not a hairline
     for i, (label, delta) in enumerate(steps):
-        bottom = run if delta >= 0 else run + delta
+        height = max(abs(delta), floor_h)
+        bottom = run if delta >= 0 else run - height
         color = theme.accent if delta >= 0 else theme.negative
-        ax.bar(i, abs(delta), bottom=bottom, width=0.56, color=color,
+        ax.bar(i, height, bottom=bottom, width=0.56, color=color,
                zorder=3, linewidth=0)
-        top = max(run, run + delta)
+        if delta >= 0:
+            anchor, offset, va = run + height, 6, "bottom"
+        else:
+            # Below the drop, clear of both the bar and the running total.
+            anchor, offset, va = bottom, -10, "top"
         ax.annotate(("+" if delta > 0 else "−") + _plain(abs(delta), unit),
-                    (i, top), xytext=(0, 6), textcoords="offset points",
-                    ha="center", va="bottom", fontsize=11, color=color)
+                    (i, anchor), xytext=(0, offset), textcoords="offset points",
+                    ha="center", va=va, fontsize=11, color=color)
         if i:
             ax.plot([i - 1 + 0.28, i - 0.28], [run, run],
                     color=_tint(theme.ink, 0.62, theme.paper), linewidth=1.1,
@@ -460,9 +484,12 @@ def waterfall(steps: list[tuple[str, float]], name: str, theme: Theme, *,
         labels.append(label)
     # The total is a bar of its own, in ink: it is the claim, not a category.
     ax.bar(len(steps), run, width=0.56, color=theme.ink, zorder=3, linewidth=0)
-    ax.annotate(_plain(run, unit), (len(steps), run), xytext=(0, 6),
-                textcoords="offset points", ha="center", va="bottom",
-                fontsize=12, color=theme.ink, fontweight="bold")
+    fig.subplots_adjust(left=0.145, right=0.985, top=0.93, bottom=0.17)
+    # The total is printed inside its own bar, in paper: a dark label on a
+    # dark bar is the one thing that makes a bridge unreadable.
+    ax.annotate(_plain(run, unit), (len(steps), run), xytext=(0, -9),
+                textcoords="offset points", ha="center", va="top",
+                fontsize=12, color=theme.paper, fontweight="bold")
     xs.append(len(steps))
     labels.append("合计")
     ax.axhline(0, color=_tint(theme.ink, 0.55, theme.paper), linewidth=1.1, zorder=2)
@@ -484,6 +511,10 @@ def waterfall(steps: list[tuple[str, float]], name: str, theme: Theme, *,
 def _plain(v: float, unit: str | None) -> str:
     if unit == "ratio":
         return f"{v * 100:.1f}%"
+    if unit == "money":
+        # Values arrive in yuan. A bar labelled 2,479,462 is unreadable; 248万
+        # is the number a person would say out loud.
+        return f"{v / 10000:,.0f}万" if abs(v) >= 10000 else f"{v:,.0f}"
     if abs(v) >= 10000:
         return f"{v / 10000:.0f}万"
     return f"{v:,.0f}" if abs(v) >= 100 else f"{v:.1f}"

@@ -465,7 +465,7 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
         {k for k, _ in f.points} == base_cats for f in heat)
     if heatmap_on:
         slides.append(Slide(
-            layout="chart", title="规模、增速、客户，三条线并不同步",
+            layout="chart", title="规模、增速、客户，并不同步",
             fact=",".join(f.id for f in heat), variant="heatmap",
             note="每一列单独归一：颜色只比同一列里的高低，别跨列比深浅。",
             bullets=["规模第一不等于增速第一",

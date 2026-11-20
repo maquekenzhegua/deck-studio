@@ -134,8 +134,15 @@ def _unit(f: Fact) -> str:
 
 
 def _year(plan: Plan) -> str:
-    m = re.search(r"(20\d{2})", f"{plan.deck_title} {plan.subtitle}")
-    return m.group(1) if m else str(datetime.now().year)
+    """The year the material is about, not the year of the wall clock.
+
+    A 2025 dataset reviewed in 2026 belongs in 2025; falling back to today's
+    year makes every deck quietly wrong in January.
+    """
+    text = " ".join([plan.deck_title, plan.subtitle] +
+                    [f"{s.title} {s.note}" for s in plan.slides])
+    m = re.search(r"(20\d{2})\s*年?", text)
+    return m.group(1) if m else ""
 
 
 def _split_lead(text: str) -> tuple[str, str]:
@@ -198,15 +205,29 @@ def _top_note(f: Fact) -> str:
     return f"最高 {f.top} · {share:.0%}" if 0 < share < 0.95 else f"最高 {f.top}"
 
 
+def _readable(label: str) -> str:
+    """Turn a database caption into something a person reads aloud.
+
+    `销售额 按 区域` -> `销售额 · 区域`; `客单价（按时间，均值）` keeps its
+    bracket instead of growing an orphan separator right after `（`.
+    """
+    text = re.sub(r"（\s*按\s*", "（", label or "")
+    text = re.sub(r"\s+按\s+", " · ", text)
+    text = re.sub(r"\s{2,}", " ", text)
+    return text.strip()
+
+
 def _label_unit(f: Fact) -> str:
     """「销售额 · 区域（元）」reads; 「销售额 · 区域 · 元」is a parts list."""
     unit = _unit(f)
+    # 「订单数 按 产品线」is a database caption, not a label a person reads.
+    label = _readable(f.label)
     if not unit:
-        return f.label
+        return label
     # 「客单价（均值）（元）」is two brackets in a row; fold the unit inside.
-    if f.label.endswith("）"):
-        return f"{f.label[:-1]} · {unit}）"
-    return f"{f.label}（{unit}）"
+    if label.endswith("）"):
+        return f"{label[:-1]} · {unit}）"
+    return f"{label}（{unit}）"
 
 
 def _value(v: float, unit: str | None) -> str:
@@ -294,12 +315,14 @@ def cover(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                      spacing=-0.8, wrap=False)
             add_text(slide, x, Inches(5.98), width - Inches(0.30), Inches(0.26),
                      _label_unit(f), theme, size=Pt(10.5),
-                     color=_mix(theme.dark, theme.dark_ink, 0.78), spacing=0.8)
+                     color=_mix(theme.dark, theme.dark_ink, 0.86), spacing=0.8)
 
     add_rect(slide, MARGIN_X, Inches(6.54), CONTENT_W, Emu(6350),
              _mix(theme.dark, "#FFFFFF", 0.22))
+    year = _year(plan)
+    tail = f"{year} 年经营复盘" if year else "经营复盘"
     add_text(slide, MARGIN_X, Inches(6.68), Inches(6.0), Inches(0.24),
-             f"{len(plan.slides)} 页  ·  {_year(plan)} 年经营复盘", theme, size=Pt(9),
+             f"{len(plan.slides)} 页  ·  {tail}", theme, size=Pt(9),
              color=_rgb(theme.dark_muted), spacing=1.4)
 
 
@@ -399,8 +422,7 @@ def section(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
 
 def _clean_label(label: str | None) -> str:
     """`销售额 按 区域` reads like a database column; `销售额 · 区域` reads."""
-    text = (label or "").strip()
-    return re.sub(r"\s*按\s*", " · ", text)
+    return _readable(label or "")
 
 
 def _point_number(v: float, unit: str | None) -> str:
@@ -750,14 +772,17 @@ def _water_png(ids: list[str], facts: dict[str, Fact], name: str, theme: Theme) 
 
 def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
           idx: int, total: int) -> None:
+    # A table of one number is not a table. When the outline points a table at
+    # a scalar (a model will do this), show the number at scale instead of
+    # spending a page on a header and nothing else.
+    ids = _ids(s)
+    f = facts.get(ids[0]) if ids else None
+    if not f or len(f.points) < 2:
+        return statement(prs, plan, s, facts, theme, idx, total)
+
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(slide, theme)
     _head(slide, s, theme, facts)
-    ids = _ids(s)
-    f = facts.get(ids[0]) if ids else None
-    if not f or not f.points:
-        page_number(slide, idx, theme, total)
-        return
 
     pts = sorted(f.points, key=lambda kv: -kv[1])[:8]
     x0 = MARGIN_X
@@ -856,7 +881,7 @@ def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
             # A hairline-grey bar all but disappears on paper; tint the accent
             # instead so every row still reads as a bar without competing with
             # the highlighted one.
-            color = _rgb(theme.accent) if i == 1 else _mix(theme.paper, theme.accent, 0.34)
+            color = _rgb(theme.accent) if i == 1 else _mix(theme.paper, theme.accent, 0.55)
         bar_h = Inches(0.22)
         add_rect(slide, Emu(bx), int(top) + int((row_h - bar_h) / 2), Emu(int(length)),
                  bar_h, color)
@@ -887,10 +912,15 @@ def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     reading = subst(s.note, facts) if s.note else ""
     if not reading and len(pts) >= 2:
         if f.chart == "funnel":
-            drops = [(pts[i][0], pts[i + 1][0], pts[i][1] - pts[i + 1][1])
-                     for i in range(len(pts) - 1)]
-            a, b, _ = max(drops, key=lambda t: t[2])
-            reading = f"从{a}到{b}收窄最多，{pts[-1][0]}是最低一环。"
+            # One metric per sentence. The weakest conversion (a rate) and the
+            # final count are different facts; the widest absolute drop is a
+            # third. Naming the rate first keeps the table and the title telling
+            # the same story.
+            steps = [(pts[i][0], pts[i + 1][0], pts[i + 1][1] / pts[i][1])
+                     for i in range(len(pts) - 1) if pts[i][1]]
+            a, b, rate = min(steps, key=lambda t: t[2])
+            reading = (f"{a}到{b}的转化只有 {rate * 100:.0f}%，是全链路最低；"
+                       f"{pts[-1][0]}只剩 {pts[-1][1]:,.0f}。")
         else:
             # A ranked list is not a funnel: nothing "narrows". Say what the
             # list actually shows — the spread between the ends.
@@ -955,8 +985,8 @@ def numbers(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
         for i, text in enumerate(items):
             add_rect(slide, MARGIN_X, Inches(y), CONTENT_W, Emu(6350),
                      _rgb(theme.accent if i == 0 else theme.hair))
-            add_text(slide, MARGIN_X, Inches(y + 0.06), Inches(1.05), Inches(0.62),
-                     f"{i + 1:02d}", theme, size=Pt(40),
+            add_text(slide, MARGIN_X, Inches(y + 0.06), Inches(1.10), Inches(0.72),
+                     f"{i + 1:02d}", theme, size=Pt(46),
                      color=_mix(theme.ink, theme.paper, 0.74), bold=True,
                      font="headline", spacing=-1.0)
             lead, body = _split_lead(text)
@@ -971,10 +1001,12 @@ def numbers(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                          Inches(0.74), body, theme, size=size,
                          color=_rgb(theme.ink2), line_spacing=1.4)
             else:
-                size = _fit(text, Inches(10.6), Inches(0.95), 22, 15, 1.35)
-                add_text(slide, Inches(1.72), Inches(top), Inches(10.6),
-                         Inches(0.98), text, theme, size=size, color=_rgb(theme.ink),
-                         line_spacing=1.35)
+                # A single line in a 1.6in band has to carry the band: 22pt
+                # reads as a caption, 28–30pt reads as a claim.
+                size = _fit(text, Inches(10.5), Inches(1.10), 30, 19, 1.3)
+                add_text(slide, Inches(1.74), Inches(top), Inches(10.5),
+                         Inches(1.05), text, theme, size=size, color=_rgb(theme.ink),
+                         line_spacing=1.3)
             y += row
     else:
         for i, text in enumerate(items):
@@ -1053,27 +1085,48 @@ def image_full(prs, plan: Plan, s: Slide, facts: dict[str, Fact],
     # A chart, screenshot or diagram: treat it as a document on paper.
     _bg(slide, theme)
     _head(slide, s, theme, facts)
+    meta = ""
     if path:
         from PIL import Image
-        with Image.open(path) as im:
-            iw, ih = im.size
-        box_w, box_h = Inches(12.09), Inches(4.42)
-        scale = min(float(box_w) / iw, float(box_h) / ih)
+        from .visual import content_path as _content
+        if flat:
+            src, iw, ih = _content(path)
+        else:
+            src = path
+            with Image.open(path) as im:
+                iw, ih = im.size
+        # Mount the document on a full-width plate. Hugging the artwork makes a
+        # wide page look like a stamp; a plate the width of the text column
+        # reads as "this page is the document".
+        area_w, area_h = Inches(12.09), Inches(4.78)
+        pad = int(Inches(0.30))
+        scale = min((float(area_w) - 2 * pad) / iw, (float(area_h) - 2 * pad) / ih)
         w, h = int(iw * scale), int(ih * scale)
-        x = int(MARGIN_X + (float(box_w) - w) / 2)
-        y = int(Inches(1.74) + (float(box_h) - h) / 2)
+        # Mount the print at its own proportions and centre it. Stretching the
+        # plate to the full text width would leave a wide empty field around a
+        # narrow chart; a gallery mount reads as intentional white space.
+        plate_w, plate_h = w + 2 * pad, h + 2 * pad
+        plate_x = int((float(SLIDE_W) - plate_w) / 2)
+        plate_y = int(Inches(1.66) + (float(area_h) - plate_h) / 2)
+        x = plate_x + pad
+        y = plate_y + pad
         if theme.is_dark:
-            pad = int(Inches(0.22))
-            add_rect(slide, x - pad, y - pad, Emu(w + 2 * pad), Emu(h + 2 * pad),
+            add_rect(slide, Emu(plate_x), Emu(plate_y), Emu(plate_w), Emu(plate_h),
                      _rgb("#FFFFFF"))
         else:
-            add_rect(slide, x - 9525, y - 9525, Emu(w + 19050), Emu(h + 19050),
+            add_rect(slide, Emu(plate_x), Emu(plate_y), Emu(plate_w), Emu(plate_h),
                      _rgb(theme.soft))
-        slide.shapes.add_picture(path, Emu(x), Emu(y), Emu(w), Emu(h))
-    if s.note:
-        add_text(slide, MARGIN_X, Inches(6.34), Inches(10.8), Inches(0.36),
-                 subst(s.note, facts), theme, size=Pt(11),
-                 color=_rgb(theme.muted))
+        slide.shapes.add_picture(src, Emu(x), Emu(y), Emu(w), Emu(h))
+        meta = p.name if p else ""
+        if p and p.kind == "chart":
+            meta = f"{meta}　·　原始图表，未重绘"
+
+    caption = "　·　".join(x for x in (meta, subst(s.note, facts) if s.note else "") if x)
+    if caption:
+        cap_x = Emu(plate_x) if path else MARGIN_X
+        cap_y = Emu(plate_y + plate_h + int(Inches(0.16))) if path else Inches(6.58)
+        add_text(slide, cap_x, cap_y, Inches(11.4), Inches(0.30),
+                 caption, theme, size=Pt(9.5), color=_rgb(theme.ink2))
     page_number(slide, idx, theme, total)
     footer_rule(slide, theme)
 
@@ -1089,9 +1142,6 @@ def split_image(prs, plan: Plan, s: Slide, facts: dict[str, Fact],
     # A flat document is a reproduction, not a scene: the kicker should not
     # say "现场" over a bar chart. And when compose already put "原始材料：" in
     # the title, the kicker carries it so the title can be the object itself.
-    add_text(slide, MARGIN_X, Inches(0.52), Inches(5.2), Inches(0.26),
-             "原始材料" if flat else "现场", theme, size=Pt(9.5),
-             color=_rgb(theme.accent), bold=True, spacing=2.6)
     title = subst(s.title, facts)
     if flat and title.startswith("原始材料："):
         title = title.split("：", 1)[1]
@@ -1099,18 +1149,33 @@ def split_image(prs, plan: Plan, s: Slide, facts: dict[str, Fact],
     title = _wrap_clauses(title, Inches(5.35), size.pt)
     lines = title.count("\n") + 1
     title_h = lines * size.pt * 1.12 / 72.0
-    add_text(slide, MARGIN_X, Inches(0.92), Inches(5.42), Inches(title_h + 0.08),
+
+    note = subst(s.note, facts) if s.note else ""
+    size_n = _fit(note, Inches(5.2), Inches(1.45), 15.5, 11, 1.45) if note else Pt(15.5)
+    note_h = (estimate_lines(note, Inches(5.2), size_n.pt) * size_n.pt * 1.45 / 72.0
+              if note else 0.0)
+    n_bul = min(3, len(s.bullets))
+
+    # A photograph leaves the left column quiet. Top-aligning a short block
+    # against a full-height picture reads as a mistake; sink the block toward
+    # the optical centre instead, the way an editorial page sets a caption.
+    block = 0.30 + 0.40 + title_h + (0.34 + note_h if note else 0) + 0.44 + n_bul * 0.70
+    top = 0.52
+    if path and not flat:
+        top = min(1.55, 0.52 + max(0.0, 5.86 - 0.52 - block) * 0.42)
+
+    add_text(slide, MARGIN_X, Inches(top), Inches(5.2), Inches(0.26),
+             "原始材料" if flat else "现场", theme, size=Pt(9.5),
+             color=_rgb(theme.accent), bold=True, spacing=2.6)
+    add_text(slide, MARGIN_X, Inches(top + 0.40), Inches(5.42), Inches(title_h + 0.08),
              title, theme, size=size, color=_rgb(theme.ink), bold=True,
              font="headline", line_spacing=1.12)
 
-    y = 0.92 + title_h + 0.34
-    if s.note:
-        note = subst(s.note, facts)
-        size_n = _fit(note, Inches(5.2), Inches(1.45), 15.5, 11, 1.45)
+    y = top + 0.40 + title_h + 0.34
+    if note:
         add_text(slide, MARGIN_X, Inches(y), Inches(5.28), Inches(1.5),
                  note, theme, size=size_n, color=_rgb(theme.ink2), line_spacing=1.45)
-        nlines = estimate_lines(note, Inches(5.2), size_n.pt)
-        y += nlines * size_n.pt * 1.45 / 72.0 + 0.44
+        y += note_h + 0.44
     for b in s.bullets[:3]:
         if y > 5.95:
             break
@@ -1123,6 +1188,14 @@ def split_image(prs, plan: Plan, s: Slide, facts: dict[str, Fact],
 
     if path and not flat:
         _photo(slide, path, Inches(6.78), 0, Inches(6.55), SLIDE_H, theme, duotone=True)
+        # A photograph is a document too: name the file, and let the left column
+        # end on something instead of trailing off into white.
+        if p:
+            add_line(slide, MARGIN_X, Inches(6.44), Inches(4.60), Inches(6.44),
+                     _rgb(theme.hair))
+            add_text(slide, MARGIN_X, Inches(6.56), Inches(5.0), Inches(0.24),
+                     f"{p.name}  ·  {p.width} × {p.height} px", theme, size=Pt(9),
+                     color=_rgb(theme.muted))
     else:
         # A chart or screenshot is a document. Rather than floating it on a
         # tinted card, print it on a full-height white plate: the page reads as
