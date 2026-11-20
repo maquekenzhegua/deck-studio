@@ -551,6 +551,9 @@ async function build(force=false, replan=false){
         const pd = await pr.json();
         if(pd.plan){ S.plan = pd.plan; S.planner = pd.planner; renderOutline(); renderDeckHead(); }
       }
+      // The outline is settled; say what is happening now instead of leaving
+      // "模型在排页序" on screen while the renderer works.
+      busy(true, '正在排版', '页序定了，正在配色、画图、导出预览…');
     }
     const r = await fetch('/api/build', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({plan:S.plan, theme:S.theme, force})});

@@ -31,6 +31,11 @@ from .ingest import Bundle, Table
 MONEY_HINT = re.compile(r"额|金额|收入|营收|成本|利润|价格|售价|支出|预算|销售|GMV|gmv|revenue|cost|price|amount", re.I)
 COUNT_HINT = re.compile(r"数|量|单量|人数|次数|件数|台数|用户|订单|访问|点击|count|qty|volume|orders|users", re.I)
 CONVERSION = re.compile(r"转化|conversion|convert", re.I)
+# A funnel is a process, not a ranking. Its categories name stages a lead walks
+# through; a region or channel list that happens to shrink must stay a ranking.
+STAGES = re.compile(
+    r"线索|商机|方案|签约|报价|洽谈|触达|曝光|点击|加购|下单|支付|复购|注册|"
+    r"激活|留存|访问|咨询|成交|交付|到店|试用")
 RATIO_HINT = re.compile(r"率|比|占比|百分比|rate|ratio|share|pct|percent", re.I)
 # Anything measured per-unit or averaged must never be summed.
 MEAN_HINT = re.compile(r"平均|均值|单价|客单价|均价|天数|时长|周期|年龄|评分|得分|分数|人均")
@@ -308,7 +313,10 @@ def _breakdown_fact(table: Table, ccol: str, vcol: str, unit: str, agg: str, idx
     # funnel makes the deck print "转化" over numbers that are not conversions.
     conv = next((c for c in table.df.columns if c != ccol and c != vcol
                  and isinstance(c, str) and CONVERSION.search(c)), None)
+    stage_hits = sum(bool(STAGES.search(str(k))) for k, _ in rows)
+    looks_like_stages = stage_hits >= max(2, len(rows) // 2 + len(rows) % 2)
     is_funnel = (bool(conv) and vcol != conv and len(order) >= 3
+                 and looks_like_stages
                  and all(a > b for a, b in zip(order, order[1:])))
     return Fact(
         id=f"f{idx}", kind="breakdown",
@@ -365,12 +373,16 @@ def extract(bundle: Bundle) -> list[Fact]:
                 else:
                     idx -= 1
             if cats:
-                idx += 1
-                f = _breakdown_fact(table, cats[0], vcol, unit, agg, idx)
-                if f:
-                    facts.append(f)
-                else:
-                    idx -= 1
+                # Two dimensions, not one: a sales sheet almost always has both
+                # a time axis and a "who" axis, and "by region" and "by channel"
+                # answer different questions. More than two floods the deck.
+                for ccol in cats[:2]:
+                    idx += 1
+                    f = _breakdown_fact(table, ccol, vcol, unit, agg, idx)
+                    if f:
+                        facts.append(f)
+                    else:
+                        idx -= 1
             idx += 1
             f = _scalar_fact(table, vcol, unit, agg, idx)
             if f:
@@ -382,7 +394,11 @@ def extract(bundle: Bundle) -> list[Fact]:
     seen: set[tuple[str, str, str]] = set()
     deduped = []
     for f in sorted(facts, key=lambda x: -x.score):
-        key = (f.kind, f.source.split(" · ")[0], f.column)
+        # A breakdown is identified by the dimension it breaks down by, not by
+        # the value column: "revenue by quarter" and "revenue by channel" are
+        # different facts that share a column.
+        key = (f.kind, f.source.split(" · ")[0], f.column,
+               f.label if f.kind == "breakdown" else "")
         if key in seen:
             continue
         seen.add(key)

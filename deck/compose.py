@@ -174,6 +174,9 @@ def _pull_quote(bundle) -> tuple[str, str]:
         # with "##" or ">" is a formatting artefact, not the author speaking.
         text = re.sub(r"^\s{0,3}#{1,6}\s*", "", d.text or "", flags=re.M)
         text = re.sub(r"^\s{0,3}[>\-*]\s*", "", text, flags=re.M)
+        # A paragraph break ends a sentence. Erasing it glues a heading onto
+        # the sentence that follows and ships "渠道复盘直营团队…" as a quote.
+        text = re.sub(r"\n+", "。", text)
         text = re.sub(r"\s+", "", text)
         for chunk in re.split(r"(?<=[。！？])", text):
             line = chunk.strip("。！？ ")
@@ -255,7 +258,10 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
         first, second = _halves(trend)
         sub_bits.append(f"{_metric(trend)}全年{'走高' if second >= first else '走低'}")
     if ratio and len(ratio.points) > 3:
-        sub_bits.append("区域分化明显")
+        vals = [v for _, v in ratio.points]
+        # Name the metric, not a dimension we guessed: the same page shape has
+        # to work for regions, channels and quarters.
+        sub_bits.append(f"{ratio.column}从{min(vals):.0%}到{max(vals):.0%}")
     if funnel:
         sub_bits.append(f"从{funnel_first}到{funnel_last}层层收窄")
     sub = subtitle or ("，".join(sub_bits) if sub_bits else "从数据到动作")
@@ -319,6 +325,22 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
         picks = [f for f in (orders, price, customers) if f]
         slides.append(Slide(layout="kpi_row", title=ktitle,
                             fact=",".join(f.id for f in picks), note=knote))
+    else:
+        # No order/customer pair: a revenue-and-rate sheet still deserves a
+        # scale page, otherwise the deck jumps from a trend line to a ranking.
+        picks, seen_units = [], set()
+        for want in ("money", "ratio", "count", "raw"):
+            f = next((x for x in facts
+                      if x.kind == "scalar" and x.unit == want and x.id not in {p.id for p in picks}),
+                     None)
+            if f:
+                picks.append(f)
+                seen_units.add(want)
+        if len(picks) >= 2:
+            slides.append(Slide(
+                layout="kpi_row", title="先把三个数对齐：规模、效率、结构",
+                fact=",".join(f.id for f in picks[:3]),
+                note=f"{len(picks[:3])} 张卡片来自不同口径；先确认它们说的是同一段时间、同一批对象。"))
 
     # --- structure ----------------------------------------------------------
     if ratio and water is None:
@@ -328,14 +350,19 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
         elif len(negs) >= 2:
             title = f"{top_growth}领涨，{_join(negs)}同时收缩"
         else:
-            title = f"{top_growth}领先，{_bottom(ratio)}仍有空间"
-        bullets = [f"{top_growth}增速最高"]
+            lo = dict(ratio.points)[_bottom(ratio)]
+            title = (f"{top_growth}最高 {_val(ratio, top_growth) * 100:.1f}%，"
+                     f"{_bottom(ratio)}最低 {lo * 100:.1f}%")
+        # Name the metric, not "growth": the same page shape also carries
+        # conversion rates and per-unit economics.
+        metric = ratio.column or "增速"
+        gap = (max(v for _, v in ratio.points) - min(v for _, v in ratio.points)) if ratio.points else 0
+        bullets = [f"{top_growth}{metric}最高"]
         if negs:
-            bullets.append(f"{_join(negs)}同比为负")
+            bullets.append(f"{_join(negs)}为负")
         else:
-            bullets.append(f"{_bottom(ratio)}增速最低")
-        bullets.append("增长集中在少数区域" if ratio.points and
-                       _ranked(ratio)[0][1] > 0 else "整体仍在收缩")
+            bullets.append(f"{_bottom(ratio)}{metric}最低")
+        bullets.append("首尾差距明显" if gap >= 0.05 else "首尾差距不大，别只看排名")
         slides.append(Slide(layout="chart", title=title, fact=ratio.id,
                             note="同比看方向，不看绝对规模；正负分界比排名更重要。",
                             bullets=bullets))
@@ -349,19 +376,37 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
     # --- the mix ------------------------------------------------------------
     # Share is a different question from size: a donut makes "half the revenue
     # comes from one line" a shape you see before reading a number.
-    mix = next((f for f in facts if f.points and len(f.points) <= 5
-                and ("产品" in f.label or "品类" in f.label) and f.unit == "money"),
-               None)
+    # Prefer the product mix, but a channel or regional split of the same size
+    # answers the same question — and a deck with no donut at all is flatter
+    # than one that explains concentration wherever it finds it.
+    TIME_DIM = re.compile(r"季|月|年|周|日|期|时间")
+
+    def _mixable(f: Fact) -> bool:
+        dim = f.label.split("按")[-1] if "按" in f.label else ""
+        # A donut is a whole split into parts. Quarters and months are a
+        # sequence, not parts of one thing: "一个季度吃掉 28%" is nonsense.
+        return (f.points is not None and 3 <= len(f.points) <= 5
+                and f.unit == "money" and f.chart == "bar"
+                and not TIME_DIM.search(dim))
+
+    mix = next((f for f in facts if _mixable(f)
+                and ("产品" in f.label or "品类" in f.label)), None)
+    if mix is None:
+        mix = next((f for f in facts if _mixable(f) and f.id not in used), None)
     if mix:
         total = sum(abs(v) for _, v in mix.points) or 1
         top, top_v = max(mix.points, key=lambda kv: kv[1])
         bottom, bot_v = min(mix.points, key=lambda kv: kv[1])
+        dim = mix.label.split("按")[-1].strip() if "按" in mix.label else ""
+        unit_word = "产品线" if "产品" in mix.label else (dim or _metric(mix))
         slides.append(Slide(
-            layout="chart", title=f"一条产品线吃掉 {abs(top_v) / total:.0%} 的收入",
+            layout="chart", title=f"一个{unit_word}吃掉 {abs(top_v) / total:.0%} 的收入",
             fact=mix.id, variant="donut",
             note=f"{top} 占 {abs(top_v) / total:.0%}，{bottom} 只有 "
                  f"{abs(bot_v) / total:.0%}：结构比总量更值得看。",
-            bullets=[f"{top}贡献最高", f"{bottom}占比最低", "第二条线还没长出来"]))
+            bullets=[f"{top}一项占 {abs(top_v) / total:.0%}",
+                     f"{bottom}只占 {abs(bot_v) / total:.0%}",
+                     f"{len(mix.points)} 项撑起全部{_metric(mix)}"]))
 
     # --- the split, side by side --------------------------------------------
     if ratio:
@@ -405,8 +450,11 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
             title = f"{top}贡献最高，{bottom}占比最低"
             note = "结构决定毛利，也决定明年资源往哪边挪。"
         else:
-            title = f"{top}排在首位，{bottom}排在末位"
-            note = f"{metric}的分布高度不均，平均值会掩盖真实差距。"
+            title = f"{metric}：{top}第一，{bottom}末位"
+            share = abs(dict(f.points)[top]) / (sum(abs(v) for _, v in f.points) or 1)
+            note = (f"{top} 占 {share:.0%}，{bottom} 只有 "
+                    f"{abs(dict(f.points)[bottom]) / (sum(abs(v) for _, v in f.points) or 1):.0%}；"
+                    f"平均值会掩盖这个差距。")
         # Scale is an argument, not a distribution: put the leader on the page
         # as one number so the deck changes pace after two chart pages.
         if "区域" in f.label and len(f.points) >= 3:
@@ -511,6 +559,27 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
     if duration and len(acts) < 3:
         acts.append(f"压缩{slow}阶段的停留时间")
         rich.append(f"{acts[-1]}：{slow}平均 {_val(duration, slow):g} 天，全链路最久。")
+    # A dataset without a funnel or a declining segment still owes the reader a
+    # second move: fall back to structure (who carries the revenue) and to the
+    # spread between best and worst, both of which are always computable.
+    if len(acts) < 2 and ratio and len(ratio.points) >= 2:
+        by_val = sorted(ratio.points, key=lambda kv: kv[1])
+        lo, hi = by_val[0], by_val[-1]
+        if lo[0] != top_growth:
+            acts.append(f"把{lo[0]}补到{hi[0]}的水平")
+            # Two facts, not a third one computed on the fly: the gap between
+            # them is arithmetic the reader can do, and a difference we print
+            # would need its own source.
+            rich.append(f"{acts[-1]}：{lo[0]} {lo[1] * 100:.1f}%，"
+                        f"{hi[0]} {hi[1] * 100:.1f}%。")
+    if len(acts) < 2 and money:
+        top_f = max(money, key=lambda f: abs(f.points[0][1]))
+        if top_f.points[0][0] != top_growth:
+            total = sum(abs(v) for _, v in top_f.points) or 1.0
+            share = abs(top_f.points[0][1]) / total
+            acts.append(f"把{top_f.points[0][0]}的打法复制出去，别只靠它一个")
+            rich.append(f"{acts[-1]}：它占 {share:.0%} 的{top_f.column}，"
+                        f"集中度太高，第二名只有 {abs(top_f.points[1][1]) / total:.0%}。")
     acts, rich = acts[:3], rich[:3]
 
     if rich:
@@ -541,6 +610,16 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
         item = slides.pop(compare_i)
         slides.insert(water_i + 1, item)
 
+    # Rhythm guard: three identical layouts in a row turn a deck into a
+    # spreadsheet. Move the next different page forward instead of leaving the
+    # reader to blink at the same shape three times.
+    for i in range(2, len(slides) - 1):
+        if slides[i].layout == slides[i - 1].layout == slides[i - 2].layout:
+            j = next((k for k in range(i + 1, len(slides) - 1)
+                      if slides[k].layout != slides[i].layout), None)
+            if j is not None:
+                slides.insert(i, slides.pop(j))
+
     return Plan(deck_title=deck_title or thesis, subtitle=sub, slides=slides)
 
 def _stem(name: str, seen: dict[str, int] | None = None) -> str:
@@ -554,7 +633,9 @@ def _sentences(bundle, limit: int = 6) -> list[tuple[str, str]]:
     for d in getattr(bundle, "docs", []) or []:
         text = re.sub(r"^\s{0,3}#{1,6}\s*", "", d.text or "", flags=re.M)
         text = re.sub(r"^\s{0,3}[>\-*]\s*", "", text, flags=re.M)
-        # Split on sentence enders only — a line break is layout, not a pause.
+        # A paragraph break is a sentence boundary; a heading with no full stop
+        # would otherwise be glued to the sentence under it.
+        text = re.sub(r"\n+", "。", text)
         for chunk in re.split(r"(?<=[。！？])", text):
             line = re.sub(r"\s+", "", chunk).strip("。！？")
             if 12 <= len(line) <= 58 and not re.search(r"\d", line):
