@@ -301,3 +301,25 @@ class SubtitleTest(unittest.TestCase):
         result = agent.plan(self.bundle, self.facts, client=fake,
                             subtitle="2026 年经营复盘")
         self.assertEqual(result.plan.subtitle, "2026 年经营复盘")
+
+
+class ChartShapeTest(unittest.TestCase):
+    """The model names a chart; the referee may overrule it once."""
+
+    def test_a_share_title_gets_a_ring_even_if_the_model_said_chart(self) -> None:
+        bundle = ingest.load(DATA)
+        facts = compute.extract(bundle)
+        pick = next(f for f in facts
+                    if "产品线" in f.label and f.unit == "money" and 3 <= len(f.points) <= 5)
+        reply = {
+            "deck_title": "增长靠产品结构", "subtitle": "",
+            "slides": [
+                {"layout": "title", "title": "增长靠产品结构"},
+                {"layout": "chart", "title": "智能硬件吃掉一半收入", "fact": pick.id},
+                {"layout": "closing", "title": "接下来", "bullets": ["压华东", "止北方"]},
+            ],
+        }
+        result = agent.plan(bundle, facts, client=Fake([reply]))
+        self.assertEqual(result.planner, "model")
+        self.assertEqual(result.plan.slides[1].variant, "donut")
+        self.assertTrue(any("占比环" in line for line in result.log))

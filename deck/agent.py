@@ -28,7 +28,7 @@ import re
 import time
 from dataclasses import dataclass, field
 
-from . import compose, review as reviewmod, verify
+from . import chartpick, compose, review as reviewmod, verify
 from .compute import Fact
 from .ingest import Bundle
 from .llm import Client, LLMError
@@ -189,6 +189,12 @@ def plan(bundle: Bundle, facts: list[Fact], ask: str = "", *, slides: int = 0,
             else:
                 plan_model, issues = fixed, _issues(fixed, facts)
                 log.append(f"自查发现 {len(findings)} 个内容问题，已修")
+
+    # Last pass, and the only one that rewrites the model instead of asking it:
+    # a title that claims a shape ("吃掉一半收入") and a chart that cannot show
+    # that shape are a factual mismatch, not a taste question.
+    plan_model, picked = chartpick.apply(plan_model, facts)
+    log.extend(picked)
 
     if issues:
         log.append(f"保留模型稿，{len(issues)} 条版式建议未处理")
