@@ -8,7 +8,7 @@
 
 不是一个套模板的「一键生成」。它先把你手上的材料读懂、算清楚，再按一套从 19 份真实 deck（1144 页）里量出来的设计规范排版；模型可以主导论证，但**任何一个数字都必须能指回原始表格**。
 
-> **下载即用**：[Deck Studio 0.9.1 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。不需要装 Office：本机有 LibreOffice 就能逐页预览（没有的话 PPTX 照常导出，只是不出预览图）。
+> **下载即用**：[Deck Studio 0.9.2 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。不需要装 Office：本机有 LibreOffice 就能逐页预览（没有的话 PPTX 照常导出，只是不出预览图）。
 
 ![Deck Studio](docs/app-window.png)
 
@@ -114,6 +114,8 @@ python -m deck.cli notes  samples/data --plan out/plan.json -o out/plan-notes.js
 没有 LibreOffice 才退回 PowerPoint COM（机器上只装 WPS 时 COM 会不稳）；两条路都没有时 PPTX 照常写出，只是不给逐页预览。
 
 ## 设计不是拍脑袋
+
+标题用**思源宋体**（本机缺字体时依次退到华文宋体、宋体），正文用 Noto Sans SC：章节页、封面、收尾是「印刷品」的语气，数据页保持无衬线的中性。字号、栅格、图表密度都来自下面这组实测，不是凭感觉。
 
 `docs/design-language.md` 记录了量出来的东西，而不是「我觉得好看」：
 
