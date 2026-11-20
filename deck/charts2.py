@@ -301,7 +301,11 @@ def multiline(series: dict[str, list[tuple[str, float]]], name: str, theme: Them
         xs = list(range(len(vals)))
         cold = _tint(theme.ink, 0.62, theme.paper)
         color = theme.accent if cat == lead else cold
-        ax.fill_between(xs, lo_y, vals, color=_tint(color, 0.86, theme.paper), linewidth=0)
+        # Only the lead series gets an area: three grey blocks turn a set of
+        # small panels into a wall and hide the very comparison they carry.
+        if cat == lead:
+            ax.fill_between(xs, lo_y, vals, color=_tint(color, 0.88, theme.paper),
+                            linewidth=0)
         ax.plot(xs, vals, color=color, linewidth=2.4 if cat == lead else 1.8,
                 solid_capstyle="round", zorder=3)
         ax.scatter([xs[-1]], [vals[-1]], s=26, color=color, zorder=4, linewidths=0)
@@ -315,11 +319,15 @@ def multiline(series: dict[str, list[tuple[str, float]]], name: str, theme: Them
         ax.grid(False)
         # Category and latest value live inside the panel: at projection size a
         # legend forces the eye to travel for information that belongs here.
-        ax.text(-0.012, 0.86, cat, transform=ax.transAxes, ha="right", va="center",
+        # Sit the category on its own line, not on the panel: with a shared y
+        # scale the line's height *is* the value, and a label pinned to the
+        # panel centre points at empty space for the small series.
+        y_frac = (vals[-1] - lo_y) / (hi_y - lo_y)
+        ax.text(-0.012, y_frac, cat, transform=ax.transAxes, ha="right", va="center",
                 fontsize=12.5, color=theme.ink if cat == lead else theme.ink2,
                 fontweight="600" if cat == lead else "400")
-        ax.text(1.004, 0.5, fmt(vals[-1]), transform=ax.transAxes, ha="left", va="center",
-                fontsize=12, color=color, fontweight="600")
+        ax.text(1.004, y_frac, fmt(vals[-1]), transform=ax.transAxes, ha="left",
+                va="center", fontsize=12, color=color, fontweight="600")
         if i == n - 1:
             step = max(1, len(vals) // 6)
             ax.set_xticks(xs[::step])
@@ -366,12 +374,17 @@ def heatmap(rows: list[tuple[str, list[float]]], cols: list[str], name: str, the
             norm[:, j] = (col - lo) / (hi - lo) if hi > lo else 0.5
     for i in range(matrix.shape[0]):
         for j in range(matrix.shape[1]):
-            t = 0.10 + 0.78 * norm[i, j]
+            # A diverging column keeps a visible floor: -4% must not read as
+            # "almost nothing", the sign is the finding.
+            if diverge[j]:
+                t = 0.16 + 0.62 * float(norm[i, j]) ** 0.8
+            else:
+                t = 0.10 + 0.78 * norm[i, j]
             base = neg_rgb if (diverge[j] and matrix[i, j] < 0) else accent_rgb
             color = tuple(paper_rgb + (base - paper_rgb) * t)
             ax.add_patch(plt.Rectangle((j + 0.03, i + 0.06), 0.94, 0.88,
                                        facecolor=color, edgecolor="none"))
-            dark = norm[i, j] > 0.55
+            dark = t > 0.52
             ax.text(j + 0.5, i + 0.52, _cell(matrix[i, j], units[j]),
                     ha="center", va="center", fontsize=12.5,
                     color="#FFFFFF" if dark else theme.ink,

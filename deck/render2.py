@@ -221,7 +221,7 @@ def cover(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
         # Flat behind the words, then one smooth fade. A solid block butted
         # against a two-stop gradient shows a seam where the renderer bands.
         add_scrim(slide, 0, 0, SLIDE_W, SLIDE_H, _rgb(theme.dark),
-                  [(0, 100), (34, 100), (72, 26), (100, 30)])
+                  [(0, 100), (30, 100), (60, 52), (100, 16)])
         # The KPI row and footer sit in the lower third: a second scrim from
         # below keeps white numerals off the bright part of the photograph.
         add_scrim(slide, 0, Inches(4.60), SLIDE_W, Inches(2.90), _rgb(theme.dark),
@@ -295,9 +295,11 @@ def section(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                  _rgb(theme.dark), _mix(theme.dark, theme.accent, 0.22), angle=20)
 
     num = f"{sec:02d}"
-    add_text(slide, Inches(7.1), Inches(1.05), Inches(6.4), Inches(4.2),
-             num, theme, size=Pt(300), color=_mix(theme.dark, "#FFFFFF", 0.07),
-             bold=True, align="right", font="headline", spacing=-6)
+    # A 300pt numeral clipped by the page edge reads as a printing accident,
+    # not a device. Keep it whole, tucked against the right margin.
+    add_text(slide, Inches(8.15), Inches(0.52), Inches(4.75), Inches(4.6),
+             num, theme, size=Pt(264), color=_mix(theme.dark, "#FFFFFF", 0.085),
+             bold=True, align="left", font="headline", wrap=False)
 
     add_text(slide, MARGIN_X, Inches(2.02), Inches(6.2), Inches(0.26),
              f"SECTION {num}", theme, size=Pt(10.5), color=_rgb(theme.accent),
@@ -1142,7 +1144,7 @@ def compare(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
              _rgb(theme.hair))
     for k, (label, body) in enumerate(sides):
         x = left_x if k == 0 else right_x
-        tone = theme.muted if k == 0 else theme.accent
+        tone = theme.accent if k == 0 else theme.negative
         add_text(slide, x, Inches(1.92), col_w, Inches(0.30),
                  label or ("现在" if k == 0 else "接下来"), theme, size=Pt(10.5),
                  color=_rgb(tone), bold=True, spacing=1.4)
@@ -1153,8 +1155,8 @@ def compare(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
         size = _fit(body, col_w, Inches(3.10), 40, 20, 1.55)
         add_text(slide, x, Inches(2.34), col_w, Inches(3.10),
                  body, theme, size=size,
-                 color=_rgb(theme.ink), bold=True, font="headline",
-                 line_spacing=1.55)
+                 color=_rgb(theme.ink if k == 0 else theme.negative),
+                 bold=True, font="headline", line_spacing=1.55)
     if s.note:
         add_rect(slide, MARGIN_X, Inches(5.72), Inches(12.09), Inches(0.86),
                  _rgb(theme.soft))
