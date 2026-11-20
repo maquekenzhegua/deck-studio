@@ -29,8 +29,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app import paths, settings  # noqa: E402
-from deck import (agent, compose, compute, edit, ingest, multimodal, readiness,  # noqa: E402
-                  render2, review as reviewmod, verify)
+from deck import (agent, compose, compute, edit, eyes, ingest, multimodal,  # noqa: E402
+                  readiness, render2, review as reviewmod, verify)
 from deck.llm import Client, LLMError  # noqa: E402
 from deck.plan import LAYOUTS, Plan, Slide  # noqa: E402
 from deck.visual import THEMES  # noqa: E402
@@ -164,6 +164,24 @@ def client_for_model() -> Client | None:
         return Client(model=model, base_url=base, api_key=key,
                       timeout=int(os.environ.get("DECK_LLM_TIMEOUT") or 200), attempts=1)
     except (LLMError, Exception):  # noqa: BLE001 - a bad key must not break upload
+        return None
+
+
+def client_for_vision() -> Client | None:
+    """The eyes are a separate model, and absent means absent.
+
+    A text-only endpoint answers 404 on an image, so falling back to the text
+    model would turn "look at this" into a confusing failure.
+    """
+    cfg = settings.load()
+    base = cfg["vision_url"] or cfg["base_url"] or os.environ.get("DECK_VISION_URL", "")
+    model = cfg["vision_model"] or os.environ.get("DECK_VISION_MODEL", "")
+    key = cfg["vision_key"] or cfg["api_key"] or os.environ.get("DECK_VISION_KEY", "")
+    if not (base and model and key):
+        return None
+    try:
+        return Client(model=model, base_url=base, api_key=key, timeout=120, attempts=1)
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -592,6 +610,36 @@ def create_app() -> FastAPI:
             STATE["plan"] = plan
         return {"plan": asdict(plan), "message": message,
                 "planner": STATE.get("planner")}
+
+    @app.post("/api/look")
+    def look_at_pages():
+        """Let a vision model see the rendered deck and name what looks wrong.
+
+        Structural checks already prove the numbers and the boxes. This is the
+        only reader that judges composition, so its findings are layout notes,
+        never content edits.
+        """
+        with LOCK:
+            pages = list(STATE.get("pages") or [])
+            planner = STATE.get("planner")
+        if not pages:
+            raise HTTPException(409, "先生成一版，模型才有东西可看")
+        client = client_for_vision()
+        if client is None:
+            raise HTTPException(409, "先在「模型」里填一个视觉模型，它才能看页面")
+        try:
+            found = eyes.look([Path(p) for p in pages], client)
+        except LLMError as exc:
+            raise HTTPException(502, f"视觉模型没有回应：{exc}") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {
+            "notes": [{"page": n.page, "problem": n.problem, "fix": n.fix} for n in found],
+            "summary": eyes.summary(found),
+            "prompt": eyes.as_prompt(found) if found else "",
+            "planner": planner,
+            "vision": client.model,
+        }
 
     @app.post("/api/reveal")
     def reveal():

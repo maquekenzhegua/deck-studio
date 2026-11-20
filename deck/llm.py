@@ -145,6 +145,33 @@ class Client:
             time.sleep(1.0 + attempt)
         raise LLMError(f"{self.model} 连续 3 次返回空内容（finish_reason={data.get('choices', [{}])[0].get('finish_reason')}）")
 
+    def vision(self, system: str, text: str, images, *, temperature: float = 0.2,
+               max_tokens: int = 1200) -> str:
+        """Ask a vision model about pictures.
+
+        The image goes in as a data URL, which every OpenAI-compatible gateway
+        accepts without needing an upload endpoint. A text-only model answers
+        404 here — that is why the vision model is a separate setting.
+        """
+        parts = [{"type": "text", "text": text}]
+        for path in images:
+            mime, blob = _b64(path)
+            parts.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{blob}"}})
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": parts},
+            ],
+            "temperature": temperature,
+            "max_tokens": max(int(max_tokens), int(os.environ.get("DECK_MAX_TOKENS") or 0)),
+        }
+        data = self._post("/chat/completions", payload)
+        try:
+            return (data["choices"][0]["message"]["content"] or "").strip()
+        except (KeyError, IndexError) as exc:
+            raise LLMError(f"返回格式不对：{exc}") from exc
+
     def json(self, system: str, user: str, *, temperature: float = 0.2, max_tokens: int = 4096) -> dict:
         """Ask for JSON, and survive models that wrap it in prose or fences.
 
@@ -186,3 +213,12 @@ def parse_json(raw: str) -> dict:
             fixed = re.sub(r",\s*([}\]])", r"\1", chunk)
             return json.loads(fixed)
     raise LLMError(f"模型没给出 JSON: {raw[:300]}")
+
+
+def _b64(path) -> tuple[str, str]:
+    """A local image as (mime, base64). Downscaling is the caller's job."""
+    import base64
+    import mimetypes
+
+    mime = mimetypes.guess_type(str(path))[0] or "image/png"
+    return mime, base64.b64encode(open(path, "rb").read()).decode("ascii")

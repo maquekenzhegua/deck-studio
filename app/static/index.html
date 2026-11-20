@@ -24,6 +24,7 @@
     <div class="top-note"><span class="dot"></span><span id="engine">本地渲染 · 无需联网</span></div>
     <button class="btn ghost" id="ideaBtn" title="让模型先提出三个叙事角度">提三个角度</button>
     <button class="btn ghost" id="notesBtn" hidden title="让模型为每一页写一句上台要说的话">写讲稿</button>
+    <button class="btn ghost" id="lookBtn" hidden title="让视觉模型看一遍已生成的页面，指出版式问题">看一眼</button>
     <button class="btn ghost" id="setBtn" title="接入文本/视觉模型（可选）">模型</button>
     <button class="btn ghost" id="replanBtn" hidden title="让模型重新排一遍页序（比较慢）">重排</button>
     <button class="btn primary" id="buildBtn" disabled>生成演示 <span style="font-size:10px;opacity:.6">Ctrl ↵</span></button>
@@ -173,6 +174,16 @@
       <button class="btn tiny ghost" id="ideaClose">关闭</button>
     </div>
     <div class="ideas" id="ideaList"></div>
+  </div>
+</div>
+
+<div class="problems" id="lookSheet" style="display:none">
+  <h5>版式总监</h5>
+  <p id="lookSummary">模型正在看页面。</p>
+  <ul id="lookList"></ul>
+  <div class="acts">
+    <button class="btn tiny" id="lookClose">知道了</button>
+    <button class="btn tiny primary" id="lookFix">让模型按这些改</button>
   </div>
 </div>
 
@@ -502,6 +513,8 @@ function apply(data){
   $('#buildBtn').disabled = !(S.facts.length && S.plan?.slides?.length);
   $('#replanBtn').hidden = !modelOn();
   $('#notesBtn').hidden = !modelOn();
+  const visionOn = !!(S.settings && S.settings.vision_on);
+  $('#lookBtn').hidden = !(visionOn && S.pages.length);
   $('#exportBtn').disabled = !S.pages.length;
 }
 
@@ -615,6 +628,43 @@ function openReview(){
   };
 }
 $('#reviewClose').onclick = ()=>$('#reviewSheet').style.display='none';
+
+$('#lookClose').onclick = ()=>$('#lookSheet').style.display='none';
+$('#lookBtn').onclick = async ()=>{
+  const box = $('#lookSheet');
+  box.style.display='block';
+  $('#lookSummary').textContent = '模型正在看 ' + S.pages.length + ' 张页面…';
+  $('#lookList').innerHTML = '';
+  $('#lookFix').disabled = true;
+  busy(true, '正在看页面', '把已生成的页面发给视觉模型，请它指出版式问题…');
+  try{
+    const res = await fetch('/api/look', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    const d = await res.json();
+    busy(false);
+    if(!res.ok){ $('#lookSummary').textContent = d.detail || '没能看页面'; return; }
+    $('#lookSummary').textContent = d.summary;
+    $('#lookList').innerHTML = (d.notes || []).map(n=>
+      `<li><b>第 ${n.page} 页</b> · ${esc(n.problem)}<br><span class="muted">建议：${esc(n.fix)}</span></li>`).join('')
+      || '<li>没有发现明显的版式问题。</li>';
+    const fix = $('#lookFix');
+    fix.disabled = !(d.notes || []).length;
+    fix.onclick = async ()=>{
+      box.style.display='none';
+      busy(true, '按版式意见改', '模型正在重排受影响的页面…');
+      try{
+        const r2 = await fetch('/api/edit', {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({text: d.prompt})});
+        const d2 = await r2.json();
+        if(!r2.ok){ busy(false); toast(d2.detail || '改稿失败'); return; }
+        S.plan = d2.plan; S.planner = d2.planner || S.planner; S.review = d2.review || S.review;
+        renderOutline(); renderDeckHead(); busy(false);
+        toast(d2.message || '已按版式意见改');
+        await build(true);
+      }catch(e){ busy(false); toast('改稿失败：' + e.message); }
+    };
+  }catch(e){ busy(false); $('#lookSummary').textContent = '看页面失败：' + e.message; }
+};
+
 
 function openReady(){
   const r = S.readiness;
