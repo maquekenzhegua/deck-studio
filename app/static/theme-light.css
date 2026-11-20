@@ -362,3 +362,9 @@ aside.rail{
   background-position:calc(100% - 10px) 50%,calc(100% - 6px) 50%;background-size:4px 4px,4px 4px;background-repeat:no-repeat}
 .pgs select:hover{border-color:#CBD5E1}
 @media(max-width:1180px){ .pgs span{display:none} }
+
+/* the spoken line, under the slide it belongs to */
+.row .say{
+  margin-top:7px; padding-left:9px; border-left:2px solid var(--brand-soft);
+  font-size:12px; line-height:1.65; color:var(--muted);
+}

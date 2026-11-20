@@ -23,6 +23,7 @@ check, so it has to be produced by counting what actually happened.
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from dataclasses import dataclass, field
@@ -305,3 +306,71 @@ def pitch(bundle: Bundle, facts: list[Fact], *, client: Client, n: int = 3) -> l
 def _layouts() -> list[str]:
     from .plan import LAYOUTS
     return sorted(LAYOUTS)
+
+
+NOTES_SYSTEM = """你是一位讲者教练。给你一份已经定稿的大纲，请为每一页写一句上台要说的话。
+
+规则：
+1. 口语，不是书面语；不要复述标题，补一句标题没说完的话。
+2. 绝对不能出现任何数字——数字都在页面上；也不要写「这一页」「如图所示」。
+3. 每句 20–70 个汉字，能一口气说完。
+4. 只输出 JSON：{"notes":[{"page":1,"say":"..."}]}，页码从 1 开始。"""
+
+
+def _spoken(text: str, facts: dict[str, Fact]) -> str:
+    """Fill fact placeholders so the model reads a sentence, not `{{f3}}`."""
+    def one(m):
+        f = facts.get(m.group(1))
+        if f is None:
+            return ""
+        # `Fact.number` is already formatted for the page ("34.0%", "977.2万"),
+        # so only add a suffix the number does not carry itself.
+        suffix = "" if f.number.endswith(("%", "元", "万", "亿", "个", "家")) else _unit_suffix(f.unit)
+        return f"{f.number}{suffix}"
+    return re.sub(r"\{\{(f\d+)\}\}", one, text or "").strip()
+
+
+def _unit_suffix(unit: str) -> str:
+    return {"money": "元", "count": "个", "ratio": "%", "raw": ""}.get(unit, "")
+
+
+def notes(plan: Plan, facts: list[Fact], *, client: Client | None,
+          limit: int = 14) -> tuple[Plan, str] | None:
+    """Write the spoken line for each page. Returns None when nothing lands.
+
+    A script is prose, so it cannot carry a figure: any note with a digit is
+    dropped rather than verified. That keeps this feature outside the number
+    pipeline entirely.
+    """
+    if client is None or not plan.slides:
+        return None
+    fmap = {f.id: f for f in facts}
+    outline = []
+    for i, s in enumerate(plan.slides[:limit], 1):
+        outline.append({
+            "page": i,
+            "layout": s.layout,
+            "title": _spoken(s.title, fmap),
+            "points": [_spoken(b, fmap) for b in (s.bullets or [])][:3],
+        })
+    prompt = "## 大纲\n" + json.dumps(outline, ensure_ascii=False)
+    try:
+        data = client.json(NOTES_SYSTEM, prompt, temperature=0.5, max_tokens=1800)
+    except (LLMError, ValueError):
+        return None
+    written = 0
+    for item in (data.get("notes") or []):
+        try:
+            page = int(item.get("page"))
+        except (TypeError, ValueError):
+            continue
+        say = str(item.get("say") or "").strip()
+        if not (1 <= page <= len(plan.slides)):
+            continue
+        if re.search(r"\d", say) or not (8 <= len(say) <= 90):
+            continue
+        plan.slides[page - 1].script = say
+        written += 1
+    if not written:
+        return None
+    return plan, f"写好 {written} 页讲稿"

@@ -117,6 +117,7 @@ def plan_from(payload: dict) -> Plan:
                 note=str(raw.get("note") or ""),
                 bullets=bullets,
                 variant=str(raw.get("variant") or ""),
+                script=str(raw.get("script") or ""),
             )
         )
     return Plan(
@@ -573,6 +574,24 @@ def create_app() -> FastAPI:
                 "theme": STATE.get("theme"), "changed": bool(changed),
                 "planner": STATE.get("planner"), "review": review_now(),
                 "readiness": readiness_now()}
+
+    @app.post("/api/notes")
+    def write_notes():
+        """The model writes what to say on each page, in its own words."""
+        with LOCK:
+            plan = STATE.get("plan")
+            if plan is None:
+                raise HTTPException(409, "先生成一版大纲")
+            client = client_for_model()
+            if client is None:
+                raise HTTPException(409, "先在「模型」里填一个端点，再让它写讲稿")
+            got = agent.notes(plan, STATE.get("facts") or [], client=client)
+            if got is None:
+                raise HTTPException(502, "模型这次没有写出可用的讲稿，稍后再试")
+            plan, message = got
+            STATE["plan"] = plan
+        return {"plan": asdict(plan), "message": message,
+                "planner": STATE.get("planner")}
 
     @app.post("/api/reveal")
     def reveal():

@@ -1405,7 +1405,10 @@ def _speaker_notes(slide, s: Slide, facts: dict[str, Fact]) -> None:
     except Exception:  # noqa: BLE001 - notes are optional, never fatal
         return
     title = subst(s.title, facts)
-    lines = [title]
+    # The script comes first: it is the only line the presenter reads while
+    # looking at the audience, everything below it is reference.
+    lines = [s.script] if s.script else []
+    lines.append(title)
     ids = re.findall(r"\{\{(f\d+)\}\}", s.title + " " + " ".join(s.bullets))
     ids += [x.strip() for x in (s.fact or "").split(",") if x.strip()]
     used = [facts[fid] for fid in dict.fromkeys(ids) if fid in facts]

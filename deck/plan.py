@@ -139,6 +139,9 @@ class Slide:
     # The layout stays "chart" so the rest of the pipeline -- verify, audit,
     # the UI dropdown -- keeps treating it as one page with a chart on it.
     variant: str = ""
+    # What the presenter says out loud. Written by the model on request, kept
+    # separate from `note` (which is printed on the page).
+    script: str = ""
 
 
 @dataclass
@@ -369,6 +372,7 @@ def _validate(data: dict, facts: list[Fact], pics: list[Picture],
                 note=str(raw.get("note") or "").strip(),
                 bullets=bullets,
                 variant=variant,
+                script=str(raw.get("script") or "").strip(),
             )
         )
 
