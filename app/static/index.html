@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deck Studio · 把资料变成一场汇报</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563EB'/%3E%3Ctext x='16' y='23' font-family='Segoe UI' font-size='19' font-weight='800' text-anchor='middle' fill='%23FFFFFF'%3ED%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="/static/theme-light.css?v=9">
+<link rel="stylesheet" href="/static/theme-light.css?v=10">
 </head>
 <body>
 <div class="app">
@@ -442,6 +442,7 @@ function renderGrid(){
     <div class="slide-card" data-i="${i}">
       <img src="${u}" loading="lazy" alt="第 ${i+1} 页">
       <div class="num">${String(i+1).padStart(2,'0')}</div>
+      <div class="lay">${(LAYOUT_OPTS.find(o=>o[0]===(S.plan.slides[i]||{}).layout)||[0,'页'])[1]}</div>
     </div>`).join('');
   $$('.slide-card', g).forEach(c=>c.onclick = ()=>openLb(+c.dataset.i));
 }
@@ -462,7 +463,7 @@ function emptyPreview(){
   $('#empty').querySelector('.big').textContent = '02';
   $('#empty').querySelector('h3').textContent = '结构就绪，还差一次生成';
   $('#empty').querySelector('p').textContent = S.pptx
-    ? 'PPTX 已经生成，但这台机器没有可用的 PowerPoint，页面预览不可用。文件仍可导出。'
+    ? 'PPTX 已经生成，但这台机器上没有可用的预览引擎（LibreOffice 或 PowerPoint）。文件仍可导出。'
     : '点右上角「生成演示」，会渲染 PPTX 并导出每一页预览。';
   $('#emptySample').style.display = 'none';
 }

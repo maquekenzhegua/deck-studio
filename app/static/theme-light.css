@@ -347,3 +347,9 @@ aside.rail{
 
 #ideaSheet .sheet-head{align-items:flex-start}
 #ideaSheet .sheet-head .btn{margin-left:auto;flex:0 0 auto}
+
+/* A preview card should say what kind of page it is; the picture alone does
+   not tell "表格" from "热力记分卡" at 300px wide. */
+.slide-card .lay{position:absolute;left:10px;bottom:10px;padding:2px 7px;border-radius:5px;
+  background:rgba(255,255,255,.92);border:1px solid var(--line);
+  font-size:10.5px;font-weight:600;color:var(--ink-2);letter-spacing:.02em}

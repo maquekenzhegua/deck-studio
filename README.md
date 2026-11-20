@@ -8,7 +8,7 @@
 
 不是一个套模板的「一键生成」。它先把你手上的材料读懂、算清楚，再按一套从 19 份真实 deck（1144 页）里量出来的设计规范排版；模型可以主导论证，但**任何一个数字都必须能指回原始表格**。
 
-> **下载即用**：[Deck Studio 0.4.0 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
+> **下载即用**：[Deck Studio 0.5.0 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
 
 ![Deck Studio](docs/app-window.png)
 
@@ -22,7 +22,7 @@
 | 真的会算 | 从表里抽事实：趋势、区域/产品构成、同比、漏斗、停留；比率用均值，漏斗找瓶颈 |
 | 数字可追溯 | 每页数字渲染前逐项校验，对不上就拦下来（`deck/verify.py`） |
 | 版式自己选 | 封面 / 章节 / 单个数字 / 关键数 / 图表 / 表格 / 对比 / 要点 / 引语 / 图文 / 全幅图 / 收尾 |
-| 图表不止柱状图 | 折线（带峰值）、条形、分面小图、环形占比、增量瀑布、热力记分卡 |
+| 图表不止柱状图 | 折线（带峰值）、条形、分面小图、环形占比、增量瀑布、热力记分卡、双指标表格 |
 | 读懂图 | 图片先分类（图表/截图/文档页/照片），PDF 渲染成页图，DOCX 抽内嵌图，PPTX 读配色/字体/标题字号 |
 | 学你的模板 | 上传一份旧 PPT，它把配色、字体、标题字号映射成第 6 个主题「你的模板」 |
 | 模型主导 | 配上任意 OpenAI 兼容模型，由它决定页序、选哪条事实、标题怎么写；程序只当裁判 |
