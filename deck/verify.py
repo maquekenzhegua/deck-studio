@@ -72,6 +72,18 @@ def _allowed(facts: list[Fact]) -> set[str]:
         for _, v in f.points:
             for m in NUM.finditer(f"{v:g}"):
                 ok.add(m.group(0).replace(",", ""))
+            if f.unit == "ratio":
+                ok.add(f"{abs(v) * 100:.1f}")
+                ok.add(f"{abs(v) * 100:.0f}")
+        # A share of the same breakdown is derived, not invented: a page may
+        # say "华东占 37%" as long as 37 really is 977/total of these points.
+        if len(f.points) > 1:
+            total = sum(abs(v) for _, v in f.points)
+            if total:
+                for _, v in f.points:
+                    share = abs(v) / total * 100
+                    ok.add(f"{share:.1f}")
+                    ok.add(f"{share:.0f}")
     return ok
 
 

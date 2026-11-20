@@ -1,152 +1,150 @@
-# deck
+# Deck Studio
 
-把一堆工作文件（Excel、Word、会议记录、截图）变成一份**不会说谎**的汇报 PPT。
+把一堆工作文件（Excel、Word、PDF、旧 PPT、截图、照片）变成一份**不会说谎、也拿得出手**的汇报 PPT。
 
-不是「输入一句话，AI 生成一套模板」。是把你手上真实的那堆东西吃进去，算清楚，然后按设计规范排出来。
+不是一个套模板的「一键生成」。它先把你手上的材料读懂、算清楚，再按一套从 19 份真实 deck（1144 页）里量出来的设计规范排版；模型可以主导论证，但**任何一个数字都必须能指回原始表格**。
 
-```bash
-python samples/make_sample.py            # 生成示例数据
-python -m deck.cli facts samples/data    # 先看它算出了什么（不花 token）
-python -m deck.cli brief samples/data    # 判断这份 deck 该是什么，不够就问你
-python -m deck.cli build samples/data -o out/demo.pptx \
-    --ask "给管理层看的年度经营汇报，重点讲增长来自哪里、问题在哪"
-```
+![Deck Studio](docs/app-window.png)
 
-## 它解决的四件事
+---
 
-### 一、先想清楚这份 deck 是给谁看的，再动手
+## 它能做什么
 
-这是所有 AI PPT 工具都跳过的一步，也是最贵的一步。
+| 能力 | 说明 |
+|---|---|
+| 多模态输入 | xlsx / xlsm / csv / docx / pdf / pptx / png / jpg / webp，混着拖进来就行 |
+| 真的会算 | 从表里抽事实：趋势、区域/产品构成、同比、漏斗、停留；比率用均值，漏斗找瓶颈 |
+| 数字可追溯 | 每页数字渲染前逐项校验，对不上就拦下来（`deck/verify.py`） |
+| 版式自己选 | 封面 / 章节 / 单个数字 / 关键数 / 图表 / 表格 / 对比 / 要点 / 引语 / 图文 / 全幅图 / 收尾 |
+| 图表不止柱状图 | 折线（带峰值）、条形、分面小图、环形占比、热力记分卡 |
+| 读懂图 | 图片先分类（图表/截图/文档页/照片），PDF 渲染成页图，DOCX 抽内嵌图，PPTX 读配色/字体/标题字号 |
+| 学你的模板 | 上传一份旧 PPT，它把配色、字体、标题字号映射成第 6 个主题「你的模板」 |
+| 模型主导 | 配上任意 OpenAI 兼容模型，由它决定页序、选哪条事实、标题怎么写；程序只当裁判 |
+| 一句话改稿 | 「第三页删掉」「换成午夜」「第 4 页标题改成…」直接在界面上改并重排 |
+| 导出 | PPTX（可编辑）/ PDF / 每页 PNG，一键到桌面 |
 
-你说「整理一下这些数据」，它给你一份管理层汇报——因为系统提示词里写死了「给管理层」。这个假设**没有人声明过，所以没有人能纠正**，你要翻到第四页才发现受众错了。
+没有数字的纯文档也能出稿：它会挑出原文里最像结论的几句话，做一份摘录页 + 引语页，而不是硬编图表。
 
-所以受众、场合、时长、要谁点头、不能出现什么、什么算讲成功，这六个槽位在这里是显式的：每个都有取值、有依据、有置信度。
+## 两条入口
 
-```
-【需求判断】置信度 60% · ask_min
-   受众    公司管理层（总经理、销售与产品分管副总）  ← 2024 年度经营小结
-   场合    2024年度经营总结汇报会，用PPT替代《经营小结》  ← 2024 年度经营小结
-  ?时长    15–20页、约15分钟                        ← 假设
-   决策诉求  请管理层拍板2025年资源投向：加码服务、扭转华北东北  ← 连续两个季度负增长
-   禁忌    避免把36行月度明细直接搬上页、不要把华东34%包装成整体健康
-```
-
-带 `?` 的是我们自己填的，不是文件里读到的。标出来你一眼就能改。
-
-置信度低于 75% 就会挑几个问题问你，**问题全部来自固定的题库**，模型只能挑不能写——一个生成出来的问题是另一个没声明的假设。每题五段：问什么、我的判断和依据、2–4 个封闭选项、答错会怎样、你不答我就按哪个默认走。
-
-置信度低于 30% 时 `build` 直接拒绝出片（`exit 4`）。受众都不知道的 deck，写出来也不能用。
-
-### 二、输入是文件，不是一句话
-
-真实的工作是这样：三个 Excel、一份 Word 报告、一堆会议记录，领导一句「按去年那个格式」。
-
-现在的 AI PPT 工具全都要你把内容**重新打一遍**成 prompt。它不知道你 Q3 的毛利是多少，也不知道你上周开会定了什么。
-
-`deck/ingest.py` 直接读目录：xlsx / xlsm / xls（每个 sheet 独立成表）、csv / tsv（自动试 utf-8-sig、gb18030）、docx / md / txt、**pdf**（按页取文字，PyMuPDF 在时连表一起取）、**pptx**（按页取文字、取表、取内嵌图片，并记下每页的标题构成一份大纲）、png / jpg / webp。单个文件坏了只跳过，不中断。
-
-### 三、数字必须真算，模型只负责叙事
-
-这是 LLM 做汇报 PPT 最大的坑：**它会编数字**。你让它「总结这份销售数据」，它给你一个看起来合理但是错的分析。而且错得很自然——增长率、占比、同比，这些词它见过几百万次。
-
-所以这里的做法是：
-
-1. `deck/compute.py` 从表里算出事实（fact），每个 fact 带 `source`（哪个文件哪个 sheet）、`column`、`agg`、`raw`
-2. 模型拿到的是**事实清单**，它只能写 `{{f12}}` 这样的占位符，**不许写任何数字**
-3. `deck/verify.py` 在渲染前扫一遍：标题、说明、要点里出现的每一个数字，必须能对上某个 fact 的值。对不上就报错，不出片
-
-```
-第 3 页 [number] 要点里的「37%」找不到对应事实（原文：华东贡献了 37% 的增量）
-```
-
-这条门禁拦下的是最贵的那类错误：数字错在台上，你在台下。
-
-顺带修掉的两个静默错误：
-
-- **比率列被求和** —— 「同比增长」求和会得到 50.0%，「转化率」会得到 227.2%。`_classify()` 按列名判定聚合方式，比率和均值类一律 `mean`。
-- **漏斗的 100% 陷阱** —— 转化率按阶段分组时，第一阶段必然是 100%（线索转线索）。取最大值当头条等于说「一切正常」，真正的发现是最低那一环。所以顶部是 100% 时改取最低项。
-- **漏斗的绝对数陷阱** —— 只看 4200 / 1860 / 720 / 318，模型会写出「末端转化最弱」；真实的分步转化是 44.3% / 38.7% / 44.2%，最弱的是第三段。所以 `compute.funnel_steps()` 把每一步的转化率一起喂给模型，`as_prompt()` 里直接带 `bottleneck`。表格页也会自动把条形列换成「转化」列——一张漏斗里，绝对数不说明任何问题。
-
-### 四、任何第三方 API，可私有部署
-
-不是「我们支持 OpenAI」。是任何 OpenAI 兼容端点：
+**桌面版（推荐）**——双击 `Deck Studio.exe`，左边拖文件，中间改标题和顺序，右边看渲染结果。
 
 ```bash
-DECK_BASE_URL=https://your-vllm.internal/v1 \
-DECK_API_KEY=... \
-DECK_MODEL=Qwen3-32B \
-python -m deck.cli build ./我的数据 -o out.pptx
+python run_app.py            # 源码启动（Win10/11 自带 WebView2）
 ```
 
-`deck/llm.py` 只用标准库 `urllib`，不依赖任何 SDK。整个工具没有一行代码把数据发往固定服务器——`DECK_BASE_URL` 指向哪，数据就去哪。
+**命令行**——适合批处理和进流水线：
 
-这一条不是为了技术洁癖。2026 年大量公司禁止把经营数据传给外部 AI，Gamma 这类 SaaS 永远做不到，而一个能接公司自建 vLLM 的本地工具可以。
-
-## 排版为什么不像 AI 生成的
-
-AI 味来自三处，这里各有一条对策：
-
-| 症状 | 对策 |
-| --- | --- |
-| 字号、间距、颜色每页都不一样 | `deck/theme.py` 是唯一真相：13.333×7.5 画布、12 列网格、5 级字号、单色 + 一个强调色。渲染期不许自由发挥 |
-| 满屏 bullet，一页塞六条 | 每页 ≤3 条要点、每条 ≤28 汉字，超了 `verify` 报错 |
-| 标题是名词短语（「销售情况分析」） | prompt 硬规则：标题必须是**论点句**（「全年增长几乎全部由华东贡献」） |
-
-外加几个具体的坑，都是实测踩出来的：
-
-- `python-pptx` 的 `paragraph.left_indent` 在 1.0.2 上是**空操作**——写完了连 `a:pPr` 都不生成，项目符号照样压在第一个字上。得直接写 `pPr.set("marL", ...)`
-- `python-pptx` **从不排版**。文本框里字溢出去了它不管，你投影的时候才发现。所以 `text.py` 自己估字宽、估行数，`verify` 检查溢出
-- pptx 原生图表继承 Office 主题，出来就是 2013 年剪贴画的味道。所以图表全部用 matplotlib 出 PNG
-
-## 现在能做什么，不能做什么
-
-**能做**：读 Excel/CSV/Word/图片 → 算 20 条左右的事实 → 出一份 6 页的汇报（封面、关键数字、趋势图、结构图、结论、行动项）。
-
-**还不能做**：
-
-- **图片理解**。图片能放进去（等比缩放、居中、标出处），但不会读图里画的是什么。给它一张组织架构图，它不知道该配什么话。
-- **真正的模板复用**。现在能读去年那份 pptx 的**页序与每页主题**，据此定叙事骨架（「三句话结论 → 区域 → 产品 → 明年」）；但还不能把它的配色、字体、母版搬过来。
-- **Word / Excel 输出**。架构上留了口子（`ingest` 和 `render` 是分开的），但目前只有 pptx。
-- **多轮修改**。「第三页换个图」这种对话式改稿没有。
-
-## 布局
-
+```bash
+python -m deck.cli facts  samples/data                 # 看看抽出了哪些事实
+python -m deck.cli build  samples/data --theme editorial --out out/deck.pptx
+python -m deck.cli audit  out/deck.pptx                # 设计规则体检
 ```
-deck/
-  theme.py     设计 token：网格、字号、颜色。唯一真相
-  text.py      排版原语 + 字宽估算（python-pptx 不排版，得自己估）
-  fmt.py       数字格式化：万/亿、百分比、带符号变化
-  ingest.py    读目录 → Bundle(tables, docs, pictures)
-  compute.py   表 → Fact。护城河②在这里
-  charts.py    matplotlib 出图，不用 pptx 原生图表
-  llm.py       任何 OpenAI 兼容端点，纯 urllib。护城河③在这里
-  brief.py     判断这份 deck 是什么：六槽位 + 置信度 + 题库提问
-  plan.py      模型只写叙事，禁写数字
-  render.py    Plan + Fact → pptx。十个 layout
-  verify.py    渲染前查：每个数字都要有来源
-  audit.py     从 .pptx 实测设计规则（栅格、字号、墨迹、节奏）
-  rules.py     17 条设计规则，分 geometry / density / semantics 三层
-  cli.py       facts / brief / plan / build / audit
-samples/
-  make_sample.py  生成一套示例数据（销售、区域、漏斗 + Word + 两张图）
-tests/
-  test_deck.py    数据与渲染，全部离线
-  test_brief.py   需求判断的算术：置信度、阈值、题库筛选
-  test_audit.py   设计规则
+
+`--offline` 强制不调用模型；不填任何 Key 时默认就是离线。
+
+## 装上模型（可选）
+
+界面右上角 **模型** → 选预设 → 填 Key → **测试连接** → 保存。不用改环境变量、不用重启。
+
+内置预设：DeepSeek、通义千问（DashScope）、智谱 GLM、Moonshot、豆包（方舟）、SiliconFlow、MiniMax、OpenAI、本机 Ollama。
+视觉模型单独一栏，留空就沿用文本模型的地址与 Key；只有显式填了视觉模型，界面才会显示「可读图」。
+
+- 文本模型走 `deck/llm.py`（任意 OpenAI 兼容 `/chat/completions`），视觉走 `deck/vision.py`。
+- Key 只存在本机 `~/Documents/Deck Studio/settings.json`，回显打码。
+- 环境变量 `DECK_BASE_URL / DECK_API_KEY / DECK_MODEL`、`DECK_VISION_*` 优先级更高，方便 CI 或临时覆盖。
+- 测试连接会真发一次 `max_tokens=1` 的请求；401/404 原样报给你，不会假装成功。
+
+模型主导是怎么运作的（`deck/agent.py`）：
+
+1. 模型拿到事实清单、图片清单、版式清单，写出完整大纲（页序、每页论点、绑定哪条事实、要不要用环形/分面/热力）；
+2. `verify.py` 检查每个数字能否指回事实——**模型不许自己写数字**；
+3. 有问题就把问题清单发回模型修一次；只修得动版式的建议不会推翻整份稿子；
+4. 数字仍然对不上，才退回离线规划，并在界面上说明原因。
+
+## 预览图怎么来的
+
+优先调用本机 **LibreOffice**（`soffice --headless` 转 PDF，再用 PyMuPDF 逐页渲染成 PNG）；
+没有 LibreOffice 才退回 PowerPoint COM（机器上只装 WPS 时 COM 会不稳）；两条路都没有时 PPTX 照常写出，只是不给逐页预览。
+
+## 设计不是拍脑袋
+
+`docs/design-language.md` 记录了量出来的东西，而不是「我觉得好看」：
+
+- 19 份 Fortune 500 真实 deck、1144 页缩略图；深色页 207、浅色 937，墨迹率中位数 28.6%；
+- 封面/章节页几乎都是整版品牌色或全出血照片，字号 40–60pt；
+- 浅色内容页靠强网格、卡片、图表把版面填满——所以「空」不是高级，是没做完；
+- 深浅交替制造节奏；页码、logo、章节标签一律极简。
+
+渲染器里每一条反模式都对应一次实拍返工：幽灵元素、单位漂移、42% 基线错位、正负同色、压平趋势、把图表当照片、一页三个焦点。
+`tools/qa.py` 会把成稿再量一遍（墨迹率、字号、出血、连续同版式），界面上的「质量 100」就是它给的。
+
+![15 页成稿](docs/deck-preview.png)
+
+## 安装与打包
+
+```bash
+python -m pip install -r requirements.txt
+python run_app.py
+```
+
+打包成独立程序（one-folder，不依赖本机 Python）：
+
+```bash
+python -m PyInstaller deck_studio.spec --noconfirm --clean
+# 产物：dist/Deck Studio/Deck Studio.exe
+```
+
+打包前先关掉正在运行的实例，否则 `_internal` 里的 dll 被占用会报 `PermissionError`。
+
+无头冒烟（不打开窗口，适合 CI）：
+
+```bash
+DECK_HEADLESS=1 DECK_PORT=8799 "dist/Deck Studio/Deck Studio.exe"
+curl -s http://127.0.0.1:8799/health
 ```
 
 ## 测试
 
 ```bash
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests
 ```
 
-56 条，全部离线，不需要 API key。覆盖的承诺：比率不被求和、编造的数字被抓、
-复述需求被丢弃、置信度低就不出片、题库里已被文件回答的问题不再问。
+127 条离线测试：数字校验、离线规划、版式与图表、模型主导的降级路径、多模态分类、模板配色、QA 阈值、HTTP 接口、一句话改稿。
+没有网络、没有模型、没有 Office 也能全绿。
 
-## 状态
+## 目录
 
-早期。能跑通端到端，能出看起来像样的片子，但只在自造样例上验证过。
-下一步优先级：真实数据上跑通（换三份不同行业的表）→ 图片理解 → 模板复用 → Word/Excel。
+```
+deck/
+  ingest.py      读文件：表格/文档/PDF/图片/旧 PPT
+  multimodal.py  图片分类、PDF 页图、DOCX 内嵌图、PPTX 配色与字号
+  compute.py     从表算事实（趋势/构成/同比/漏斗/停留/多系列）
+  compose.py     离线规划：没有模型也能出稿
+  agent.py       模型主导 + 校验 + 一次修订 + 降级
+  plan.py        大纲结构与约束（标题必须是判断句）
+  verify.py      数字与结构校验
+  visual.py      主题、字号、图片处理（双色调、遮罩、裁白边）
+  render2.py     12 种版式，逐像素排版
+  charts2.py     折线/条形/分面/环形/热力图
+  audit.py rules.py  设计规则体检
+app/
+  server.py      FastAPI：上传、规划、生成、导出、设置
+  desktop.py     pywebview 窗口（WebView2）
+  static/        亮色界面（单页 + 一份 CSS）
+tools/
+  preview.py     LibreOffice/COM → PNG/PDF
+  qa.py          成稿质量分
+samples/data/    示例：销售表、经营小结、行业简报、旧 PPT、截图、照片
+```
 
-MIT。
+## 边界
+
+- 模板只学配色、字体、标题字号，不复制别人的版式几何；
+- 语义读图需要视觉模型，没配就只用几何与配色特征（不联网也能判「图表 / 照片 / 文档页」）；
+- 生成以规则为主：接模型会更会写句子、更会挑页，但不会替你编数据；
+- 目前只针对 16:9；导出 PDF/PNG 依赖本机 LibreOffice 或 Office。
+
+## License
+
+MIT

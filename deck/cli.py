@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+import tempfile
 from pathlib import Path
 
 from . import brief as briefing
-from . import compute, ingest, plan as planner, render, verify
+from . import compose
+from . import compute, ingest, multimodal, plan as planner, render, render2, verify
 from .llm import Client, LLMError
 
 # A Windows console defaults to GBK, and the check marks and Chinese quotes in
@@ -31,6 +33,9 @@ for _stream in (sys.stdout, sys.stderr):
 
 def _load(path: str):
     b = ingest.load(path)
+    # Classify pictures and pull embedded media, exactly like the desktop app;
+    # otherwise a chart is rendered as a photo and the caption has no kind.
+    multimodal.augment(b, Path(tempfile.gettempdir()) / "deck-media")
     if b.skipped:
         print(f"跳过 {len(b.skipped)} 个文件：{', '.join(b.skipped[:6])}", file=sys.stderr)
     print(f"读到 {b.summary()}", file=sys.stderr)
@@ -110,6 +115,10 @@ def cmd_brief(args) -> int:
 def cmd_plan(args) -> int:
     b = _load(args.input)
     facts = compute.pick(compute.extract(b), args.slides)
+    if getattr(args, "offline", False):
+        p = compose.draft(b, facts, deck_title=args.title or "")
+        print(p.to_json())
+        return 0
     client = Client(model=args.model, base_url=args.base_url)
     br = _make_brief(b, facts, args, client)
     _print_brief(br)
@@ -126,29 +135,35 @@ def cmd_build(args) -> int:
     if not all_facts:
         print("没有算出任何事实：输入里需要有带数值列的表格。", file=sys.stderr)
         return 1
-    facts = compute.pick(all_facts, args.slides)
+    facts = all_facts if args.offline else compute.pick(all_facts, args.slides)
 
     print("\n引用的事实：", file=sys.stderr)
     for f in facts:
         print(f"  {f.id}  {f.label} = {f.value}", file=sys.stderr)
 
-    client = Client(model=args.model, base_url=args.base_url)
-    try:
-        br = _make_brief(b, facts, args, client)
-        _print_brief(br)
-        # Below 30% we do not know what this deck is for. Building anyway means
-        # guessing the audience, and a deck written for the wrong room cannot be
-        # fixed by editing it. Stop and let the questions be answered.
-        if br.mode == "blocked" and not (args.force or args.answer):
-            print("\n需求判断置信度过低，无法确定受众与决策诉求。"
-                  "\n先回答上面的问题（--answer），或加 --force 按默认假设出片。",
-                  file=sys.stderr)
-            return 4
-        p = planner.make(b, facts, args.ask, client=client, slides=args.slides,
-                         deck_title=args.title, brief=br)
-    except (LLMError, ValueError) as e:
-        print(f"规划失败：{e}", file=sys.stderr)
-        return 2
+    br = None
+    if args.offline:
+        # No endpoint, no key, no network: write the argument from the facts.
+        p = compose.draft(b, facts, deck_title=args.title or "")
+        print("\n离线规划：标题与取舍全部来自已计算事实。", file=sys.stderr)
+    else:
+        client = Client(model=args.model, base_url=args.base_url)
+        try:
+            br = _make_brief(b, facts, args, client)
+            _print_brief(br)
+            # Below 30% we do not know what this deck is for. Building anyway means
+            # guessing the audience, and a deck written for the wrong room cannot be
+            # fixed by editing it. Stop and let the questions be answered.
+            if br.mode == "blocked" and not (args.force or args.answer):
+                print("\n需求判断置信度过低，无法确定受众与决策诉求。"
+                      "\n先回答上面的问题（--answer），或加 --force 按默认假设出片。",
+                      file=sys.stderr)
+                return 4
+            p = planner.make(b, facts, args.ask, client=client, slides=args.slides,
+                             deck_title=args.title, brief=br)
+        except (LLMError, ValueError) as e:
+            print(f"规划失败：{e}", file=sys.stderr)
+            return 2
 
     print(f"\n大纲（{len(p.slides)} 页）：", file=sys.stderr)
     for i, s in enumerate(p.slides, 1):
@@ -164,11 +179,14 @@ def cmd_build(args) -> int:
     else:
         print("\n✓ 数字校验通过", file=sys.stderr)
 
-    out = render.build(p, facts, b.pictures, args.out)
+    engine = render if args.classic else render2
+    out = engine.build(p, facts, b.pictures, args.out, **({} if args.classic else {"theme": args.theme}))
     Path(args.out).with_suffix(".plan.json").write_text(p.to_json(), encoding="utf-8")
-    Path(args.out).with_suffix(".brief.json").write_text(br.to_json(), encoding="utf-8")
+    if br:
+        Path(args.out).with_suffix(".brief.json").write_text(br.to_json(), encoding="utf-8")
     print(f"\n已生成 {out}", file=sys.stderr)
-    print(f"用量：{client.usage.total} tokens", file=sys.stderr)
+    if not args.offline:
+        print(f"用量：{client.usage.total} tokens", file=sys.stderr)
     return 0
 
 
@@ -206,6 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--model", default=None)
     p.add_argument("--base-url", default=None)
     p.add_argument("--title", default=None)
+    p.add_argument("--offline", action="store_true", help="不调用模型，按事实离线成稿")
     p.set_defaults(func=cmd_plan)
 
     b = sub.add_parser("build", help="出片")
@@ -218,6 +237,10 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--base-url", default=None)
     b.add_argument("--title", default=None)
     b.add_argument("--force", action="store_true", help="校验失败也出片")
+    b.add_argument("--theme", default="navy",
+                   help="视觉主题：navy / editorial / tech / forest / midnight")
+    b.add_argument("--classic", action="store_true", help="用旧版渲染器（v1）")
+    b.add_argument("--offline", action="store_true", help="不调用模型，按事实离线成稿")
     b.set_defaults(func=cmd_build)
 
     a = sub.add_parser("audit", help="量这份 pptx 是否符合设计规则（不花 token）")

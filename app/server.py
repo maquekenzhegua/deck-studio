@@ -1,0 +1,532 @@
+"""Deck Studio server.
+
+The CLI is the engine; this is the cockpit.  One local process, one user, one
+working directory per launch.  Everything the UI needs is expressed as JSON so
+the same routes can be driven by the desktop shell or a browser tab.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import sys
+import threading
+import time
+import zipfile
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app import paths, settings  # noqa: E402
+from deck import agent, compose, compute, edit, ingest, multimodal, render2, verify  # noqa: E402
+from deck.llm import Client, LLMError  # noqa: E402
+from deck.plan import LAYOUTS, Plan, Slide  # noqa: E402
+from deck.visual import THEMES  # noqa: E402
+
+STATIC = paths.resource("app", "static")
+if not STATIC.exists():  # source checkout fallback
+    STATIC = Path(__file__).resolve().parent / "static"
+_DIRS = paths.ensure()
+HOME = _DIRS["home"]
+UPLOADS = _DIRS["uploads"]
+OUT = _DIRS["out"]
+MEDIA = _DIRS["media"]
+
+STATE: dict[str, Any] = {
+    "bundle": None,
+    "facts": [],
+    "plan": None,
+    "theme": "editorial",
+    "pptx": None,
+    "pages": [],
+    "qa": None,
+    "started": time.time(),
+    "client": None,
+}
+LOCK = threading.RLock()
+
+THEME_COPY = {
+    "navy": ("海军蓝", "克制、可信，适合经营会"),
+    "editorial": ("编辑部", "米色纸与衬线，适合战略叙事"),
+    "tech": ("技术蓝", "冷白与电光蓝，适合产品发布"),
+    "forest": ("森林", "墨绿与琥珀，适合可持续议题"),
+    "midnight": ("午夜", "全暗场，适合舞台与路演"),
+}
+
+
+# ---------------------------------------------------------------- serialisation
+
+def fact_json(f) -> dict:
+    return {
+        "id": f.id,
+        "label": f.label,
+        "value": f.value,
+        "raw": f.raw,
+        "unit": f.unit,
+        "kind": f.kind,
+        "chart": f.chart,
+        "source": f.source,
+        "change": f.change,
+        "top": f.top,
+    }
+
+
+def plan_json(p: Plan | None) -> dict | None:
+    if p is None:
+        return None
+    return {
+        "deck_title": p.deck_title,
+        "subtitle": p.subtitle,
+        "slides": [asdict(s) for s in p.slides],
+    }
+
+
+def plan_from(payload: dict) -> Plan:
+    slides = []
+    for raw in payload.get("slides", []):
+        layout = raw.get("layout", "bullets")
+        if layout not in LAYOUTS:
+            layout = "bullets"
+        bullets = [str(b) for b in (raw.get("bullets") or [])][:6]
+        slides.append(
+            Slide(
+                layout=layout,
+                title=str(raw.get("title", "")).strip() or "未命名页",
+                fact=raw.get("fact") or None,
+                image=raw.get("image") or None,
+                note=str(raw.get("note") or ""),
+                bullets=bullets,
+                variant=str(raw.get("variant") or ""),
+            )
+        )
+    return Plan(
+        deck_title=str(payload.get("deck_title", "")).strip() or "未命名汇报",
+        subtitle=str(payload.get("subtitle", "")),
+        slides=slides,
+    )
+
+
+def adopt_template(bundle) -> None:
+    """Register the uploaded deck's own colour scheme as a selectable theme."""
+    themes = (getattr(bundle, "meta", {}) or {}).get("pptx_themes") or []
+    if not themes:
+        return
+    try:
+        from deck import palette  # noqa: PLC0415
+        from deck.visual import THEMES  # noqa: PLC0415
+
+        t = themes[0]
+        THEMES["custom"] = palette.build(t.get("colors") or {}, t.get("fonts") or {},
+                                            title_pt=float(t.get("title_pt") or 0))
+        THEME_COPY["custom"] = ("你的模板", f"取自 {t.get('file', 'PPTX')} 的配色与字体")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[deck] template palette skipped: {exc}", file=sys.stderr)
+
+
+
+def client_for_model() -> Client | None:
+    """A client only when the user actually configured one."""
+    cfg = settings.load()
+    if not (cfg["base_url"] and cfg["model"] and cfg["api_key"]):
+        return None
+    try:
+        return Client(model=cfg["model"], base_url=cfg["base_url"], api_key=cfg["api_key"])
+    except (LLMError, Exception):  # noqa: BLE001 - a bad key must not break upload
+        return None
+
+
+def reload_bundle() -> None:
+    bundle = ingest.load(UPLOADS)
+    multimodal.augment(bundle, MEDIA, pages=True)
+    adopt_template(bundle)
+    facts = compute.extract(bundle)
+    result = agent.plan(bundle, facts, client=client_for_model())
+    with LOCK:
+        STATE["bundle"] = bundle
+        STATE["facts"] = facts
+        STATE["plan"] = result.plan
+        STATE["planner"] = {"who": result.planner, "model": result.model,
+                            "label": result.summary(), "log": result.log}
+        STATE["pptx"] = None
+        STATE["pages"] = []
+        STATE["qa"] = None
+
+
+def snapshot() -> dict:
+    with LOCK:
+        bundle = STATE["bundle"]
+        files = []
+        if bundle is not None:
+            seen = set()
+            for item in [*bundle.tables, *bundle.docs, *bundle.pictures, *bundle.outlines]:
+                src = Path(getattr(item, "source", None) or getattr(item, "path", ""))
+                if src.name in seen or not str(src).startswith(str(UPLOADS)):
+                    continue
+                seen.add(src.name)
+                files.append({
+                    "name": src.name,
+                    "ext": src.suffix.lower().lstrip("."),
+                    "size": src.stat().st_size if src.exists() else 0,
+                })
+        return {
+            "files": files,
+            "facts": [fact_json(f) for f in STATE["facts"]],
+            "plan": plan_json(STATE["plan"]),
+            "home": str(HOME),
+            "client": STATE.get("client"),
+            "theme": STATE["theme"],
+            "pages": STATE["pages"],
+            "pptx": f"/files/{Path(STATE['pptx']).name}" if STATE["pptx"] else None,
+            "skipped": list(getattr(bundle, "skipped", []) or []) if bundle else [],
+            "pictures": [
+                {"id": p.id, "name": p.name, "kind": p.kind, "caption": p.caption,
+                 "note": p.note, "width": p.width, "height": p.height,
+                 "palette": p.palette, "url": f"/api/picture/{p.id}"}
+                for p in (getattr(bundle, "pictures", []) if bundle else [])
+            ],
+            "qa": STATE["qa"],
+            "planner": STATE.get("planner"),
+            "settings": settings.public(),
+            "meta": list(getattr(bundle, "meta", {}) or {}) if bundle else [],
+        }
+
+
+# ---------------------------------------------------------------- app
+
+class BuildBody(BaseModel):
+    plan: dict
+    theme: str = "navy"
+    force: bool = False
+
+
+class PlanBody(BaseModel):
+    brief: str = ""
+    deck_title: str = ""
+    subtitle: str = ""
+
+
+class ExportBody(BaseModel):
+    target: str = "desktop"
+
+
+class SettingsBody(BaseModel):
+    base_url: str = ""
+    api_key: str = ""
+    model: str = ""
+    vision_url: str = ""
+    vision_key: str = ""
+    vision_model: str = ""
+
+
+class ThemeBody(BaseModel):
+    theme: str
+
+
+class EditBody(BaseModel):
+    text: str = ""
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(title="Deck Studio", docs_url=None, redoc_url=None)
+    app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+    @app.get("/")
+    def index():
+        return FileResponse(STATIC / "index.html")
+
+    @app.on_event("startup")
+    def _restore():
+        """Reopen the last workspace instead of starting from an empty desk."""
+        try:
+            settings.apply()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[deck] settings skipped: {exc}")
+        try:
+            if any(UPLOADS.iterdir()):
+                reload_bundle()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[deck] workspace restore skipped: {exc}")
+
+    @app.get("/api/client")
+    def client(w: int = 0, h: int = 0, dpr: float = 1):
+        STATE["client"] = {"w": w, "h": h, "dpr": dpr}
+        return {"ok": True}
+
+    @app.get("/health")
+    def health():
+        return {"ok": True, "uptime": round(time.time() - STATE["started"], 1)}
+
+    @app.get("/api/state")
+    def state():
+        return snapshot()
+
+    @app.get("/api/picture/{pid}")
+    def picture(pid: str):
+        with LOCK:
+            bundle = STATE["bundle"]
+        for p in (getattr(bundle, "pictures", []) if bundle else []):
+            if p.id == pid and Path(p.path).exists():
+                return FileResponse(p.path)
+        raise HTTPException(404, "not found")
+
+    @app.post("/api/upload")
+    async def upload(files: list[UploadFile] = File(...)):
+        saved = []
+        for up in files:
+            name = Path(up.filename or "upload.bin").name
+            name = re.sub(r"[^\w.\-\u4e00-\u9fff ()]+", "_", name)
+            target = UPLOADS / name
+            stem, suffix = target.stem, target.suffix
+            n = 2
+            while target.exists():
+                target = UPLOADS / f"{stem}-{n}{suffix}"
+                n += 1
+            with target.open("wb") as fh:
+                shutil.copyfileobj(up.file, fh)
+            saved.append(target.name)
+        try:
+            reload_bundle()
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(422, f"读取失败：{exc}") from exc
+        body = snapshot()
+        # A file can be copied and still be unreadable: report what actually
+        # produced content, so the window never lists a file that yielded nothing.
+        bundle = STATE.get("bundle")
+        used: set[str] = set()
+        if bundle is not None:
+            for group in (bundle.tables, bundle.docs, bundle.pictures, bundle.outlines):
+                for item in group:
+                    src = getattr(item, "source", None) or getattr(item, "path", "")
+                    used.add(Path(str(src)).name)
+        body["saved"] = [n for n in saved if n in used]
+        body["skipped"] = [n for n in saved if n not in used]
+        return body
+
+    @app.post("/api/sample")
+    def sample():
+        sample_dir = paths.resource("samples", "data")
+        if not sample_dir.exists():
+            sample_dir = ROOT / "samples" / "data"
+        if not sample_dir.exists():
+            raise HTTPException(404, "示例数据不存在")
+        for p in sample_dir.iterdir():
+            if p.is_file():
+                shutil.copy2(p, UPLOADS / p.name)
+        reload_bundle()
+        return snapshot()
+
+    @app.post("/api/plan")
+    def replan(body: PlanBody):
+        with LOCK:
+            bundle, facts = STATE["bundle"], STATE["facts"]
+        if bundle is None:
+            raise HTTPException(409, "先上传资料")
+        text_model = settings.load()["model"] if settings.load()["base_url"] else ""
+        ask = body.brief or body.deck_title or ""
+        result = agent.plan(bundle, facts, ask, deck_title=body.deck_title or None,
+                            subtitle=body.subtitle, client=client_for_model())
+        plan = result.plan
+        if body.subtitle:
+            plan.subtitle = body.subtitle
+        with LOCK:
+            STATE["plan"] = plan
+            STATE["planner"] = {"who": result.planner, "model": result.model,
+                                "label": result.summary(), "log": result.log}
+        return {"plan": plan_json(plan), "planner": STATE["planner"]}
+
+    @app.post("/api/build")
+    def build(body: BuildBody):
+        with LOCK:
+            facts = STATE["facts"]
+            pictures = list(getattr(STATE["bundle"], "pictures", []) or [])
+            theme = body.theme if body.theme in THEMES else "navy"
+        if not facts:
+            # Text-only uploads still deserve a deck: a claim, three extracts,
+            # a close. No charts, because there is nothing to chart.
+            docs = list(getattr(STATE["bundle"], "docs", []) or [])
+            if not docs:
+                raise HTTPException(409, "这份材料里既没有表格，也没有正文")
+        plan = plan_from(body.plan) if body.plan and body.plan.get("slides") else None
+        if plan is None and not facts:
+            plan = compose.draft_text(STATE["bundle"])
+        if plan is None:
+            plan = plan_from(body.plan)
+        if not plan.slides:
+            raise HTTPException(422, "大纲是空的")
+        problems = [p.__dict__ for p in verify.check(plan, facts)]
+        if problems and not body.force:
+            return JSONResponse({"problems": problems}, status_code=422)
+
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        pptx = OUT / f"deck-{stamp}.pptx"
+        try:
+            render2.build(plan, facts, pictures, str(pptx), theme=theme)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(500, f"渲染失败：{exc}") from exc
+
+        pages: list[str] = []
+        png_dir: Path | None = None
+        preview_error = ""
+        try:
+            from tools.preview import export_png
+
+            png_dir = OUT / f"png-{stamp}"
+            for p in export_png(pptx, png_dir, 1600, 900):
+                pages.append(f"/files/{png_dir.name}/{p.name}")
+        except Exception as exc:  # noqa: BLE001
+            pages = []
+            preview_error = str(exc)
+            print(f"[deck] preview export skipped: {exc}", file=sys.stderr)
+
+        qa: dict | None = None
+        try:
+            from tools.qa import check as qa_check
+
+            qa = qa_check(pptx, png_dir if pages else None)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[deck] qa skipped: {exc}", file=sys.stderr)
+
+        with LOCK:
+            STATE.update(plan=plan, theme=theme, pptx=str(pptx), pages=pages, qa=qa)
+        return {
+            "pptx": f"/files/{pptx.name}",
+            "pages": pages,
+            "problems": problems,
+            "theme": theme,
+            "plan": plan_json(plan),
+            "qa": qa,
+            "previewError": preview_error,
+        }
+
+    @app.get("/files/{path:path}")
+    def files(path: str):
+        target = (OUT / path).resolve()
+        if not str(target).startswith(str(OUT.resolve())) or not target.exists():
+            raise HTTPException(404, "not found")
+        return FileResponse(target)
+
+    @app.post("/api/export")
+    def export(body: ExportBody):
+        with LOCK:
+            pptx = STATE["pptx"]
+            pages = list(STATE["pages"])
+        if not pptx:
+            raise HTTPException(409, "先生成")
+        src = Path(pptx)
+        desk = Path.home() / "Desktop"
+        if not desk.exists():
+            desk = Path.home() / "OneDrive" / "Desktop"
+        if not desk.exists():
+            desk = Path.home() / "Downloads"
+        desk.mkdir(parents=True, exist_ok=True)
+        dest = desk / src.name
+        shutil.copy2(src, dest)
+        extra = ""
+        pdf_path = ""
+        if body.target == "pdf":
+            from tools.preview import export_pdf  # noqa: PLC0415
+
+            try:
+                pdf_path = str(export_pdf(src, desk / f"{src.stem}.pdf"))
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(503, f"PDF 导出需要本机 PowerPoint：{exc}") from exc
+        if body.target == "png" and pages:
+            zpath = desk / f"{src.stem}-png.zip"
+            with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as zf:
+                for url in pages:
+                    p = OUT / url.replace("/files/", "", 1)
+                    if p.exists():
+                        zf.write(p, p.name)
+            extra = str(zpath)
+        return {"path": str(dest), "png": extra, "pdf": pdf_path}
+
+
+    @app.post("/api/theme")
+    def set_theme(body: ThemeBody):
+        """Choosing a theme is a state change even before anything is built."""
+        if body.theme not in THEMES:
+            raise HTTPException(400, "没有这个主题")
+        with LOCK:
+            STATE["theme"] = body.theme
+        return {"theme": body.theme}
+
+    @app.post("/api/edit")
+    def quick_edit(body: EditBody):
+        """A sentence in, a changed outline out. No model, no network."""
+        with LOCK:
+            plan = STATE["plan"]
+            if plan is None:
+                raise HTTPException(409, "先上传资料")
+            new_plan, message = edit.apply(plan, body.text)
+            # One vocabulary, in one place: the endpoint must not keep its own
+            # copy of the aliases or "换成模板" silently does nothing.
+            tid = edit.theme_for(body.text)
+            if tid:
+                STATE["theme"] = tid
+            STATE["plan"] = new_plan
+            changed = len(new_plan.slides) != len(plan.slides) or new_plan != plan
+        return {"plan": asdict(new_plan), "message": message,
+                "theme": STATE.get("theme"), "changed": bool(changed)}
+
+    @app.post("/api/reveal")
+    def reveal():
+        os.startfile(str(OUT))  # type: ignore[attr-defined]
+        return {"path": str(OUT)}
+
+    @app.post("/api/open")
+    def open_file(body: dict):
+        path = body.get("path", "")
+        if not path or not Path(path).exists():
+            raise HTTPException(404, "文件不存在")
+        os.startfile(path)  # type: ignore[attr-defined]
+        return {"ok": True}
+
+
+    @app.get("/api/settings")
+    def get_settings():
+        return settings.public()
+
+    @app.post("/api/settings")
+    def put_settings(body: SettingsBody):
+        saved = settings.save(body.model_dump())
+        STATE["settings"] = settings.public(saved)
+        return {"ok": True, "settings": STATE["settings"]}
+
+    @app.post("/api/settings/test")
+    def test_settings(body: SettingsBody):
+        data = settings.load()
+        merged = {**data, **{k: v for k, v in body.model_dump().items() if v}}
+        ok, message = settings.probe(
+            merged.get("base_url", ""), merged.get("api_key", ""), merged.get("model", "")
+        )
+        return {"ok": ok, "message": message}
+
+    @app.get("/api/meta")
+    def meta():
+        return {
+            "themes": [
+                {"id": k, "name": THEME_COPY.get(k, (k, ""))[0],
+                 "note": THEME_COPY.get(k, (k, ""))[1],
+                 "paper": v.paper, "ink": v.ink, "accent": v.accent,
+                 "dark": v.dark}
+                for k, v in THEMES.items()
+                if k != "custom" or "custom" in THEME_COPY
+            ],
+            "layouts": sorted(LAYOUTS),
+        }
+
+    return app
+
+
+app = create_app()

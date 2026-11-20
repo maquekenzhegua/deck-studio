@@ -3,7 +3,6 @@ __pycache__/
 out/
 .env
 *.log
-samples/data/
 
 # corpus: downloaded templates are large and not ours to redistribute.
 # The report and the scripts that produce it are kept -- the numbers in
@@ -12,3 +11,16 @@ corpus/raw/
 corpus/index.json
 corpus/candidates.json
 !corpus/stats.json
+
+# desktop build output (regenerate with PyInstaller; ~228 MB each)
+dist/
+dist-next/
+dist-latest/
+dist-v2/
+build/
+build-next/
+build-latest/
+build-v2/
+
+# generated reference sheets
+corpus/refs/

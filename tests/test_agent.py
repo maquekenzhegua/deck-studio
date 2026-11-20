@@ -1,0 +1,157 @@
+"""The model leads the argument; the program holds the numbers.
+
+These tests drive the whole loop with a fake client, because the behaviour
+that matters is not "does the API answer" but "what happens when it answers
+badly": invented figures, a broken outline, a timeout, a repair that does not
+improve anything.
+"""
+
+from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+from deck import agent, compute, ingest, verify
+from deck.llm import LLMError
+
+DATA = Path(__file__).resolve().parent.parent / "samples" / "data"
+
+
+class Fake:
+    """Stands in for `deck.llm.Client`; records what it was asked."""
+
+    def __init__(self, replies, model="fake-1"):
+        self.replies = list(replies)
+        self.model = model
+        self.calls = []
+
+    def json(self, system, user, **kwargs):
+        self.calls.append(user[:120])
+        if not self.replies:
+            raise LLMError("no more replies")
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+
+def outline(titles=("华东在涨，北方在退", "订单比客户多", "明年只做三件事")):
+    slides = [{"layout": "title", "title": "增长靠华东，失血在北方"}]
+    for i, title in enumerate(titles[:-1]):
+        slides.append({"layout": "bullets", "title": title, "bullets": ["一句", "两句"]})
+    slides.append({"layout": "closing", "title": titles[-1], "bullets": ["压华东", "止北方"]})
+    return {"deck_title": "增长靠华东", "subtitle": "", "slides": slides}
+
+
+class AgentTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.bundle = ingest.load(DATA)
+        cls.facts = compute.extract(cls.bundle)
+
+    def test_without_a_client_it_is_offline(self):
+        result = agent.plan(self.bundle, self.facts)
+        self.assertEqual(result.planner, "offline")
+        self.assertEqual(result.revisions, 0)
+        self.assertTrue(result.plan.slides)
+
+    def test_a_clean_model_plan_is_used_as_is(self):
+        fake = Fake([outline()])
+        result = agent.plan(self.bundle, self.facts, client=fake)
+        self.assertEqual(result.planner, "model")
+        self.assertEqual(result.revisions, 0)
+        self.assertEqual(len(fake.calls), 1)
+        self.assertEqual(result.plan.slides[0].layout, "title")
+        self.assertEqual(verify.check(result.plan, self.facts), [])
+
+    def test_a_fabricated_number_triggers_one_repair(self):
+        broken = outline(titles=("华东增长 999%", "订单比客户多", "明年只做三件事"))
+        fixed = outline()
+        fake = Fake([broken, fixed])
+        result = agent.plan(self.bundle, self.facts, client=fake)
+        self.assertEqual(result.planner, "model")
+        self.assertEqual(result.revisions, 1)
+        self.assertEqual(len(fake.calls), 2)
+        self.assertNotIn("999", result.plan.slides[1].title)
+
+    def test_a_repair_that_changes_nothing_keeps_the_offline_deck(self):
+        broken = outline(titles=("华东增长 999%", "订单比客户多", "明年只做三件事"))
+        fake = Fake([broken, broken])
+        result = agent.plan(self.bundle, self.facts, client=fake)
+        self.assertEqual(result.planner, "offline")
+        self.assertTrue(result.problems)
+
+    def test_a_dead_endpoint_falls_back_instead_of_raising(self):
+        fake = Fake([LLMError("HTTP 401: invalid key")])
+        result = agent.plan(self.bundle, self.facts, client=fake)
+        self.assertEqual(result.planner, "offline")
+        self.assertTrue(any("401" in line for line in result.log))
+
+    def test_an_empty_outline_falls_back(self):
+        fake = Fake([{"slides": []}])
+        result = agent.plan(self.bundle, self.facts, client=fake)
+        self.assertEqual(result.planner, "offline")
+
+    def test_summary_counts_the_revisions_it_claims(self):
+        result = agent.plan(self.bundle, self.facts, client=Fake([outline()]))
+        self.assertEqual(result.summary(), "fake-1 主导")
+        result.revisions = 2
+        self.assertIn("修订 2 次", result.summary())
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class VariantTest(unittest.TestCase):
+    """The model may choose how a chart is drawn — within reason."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.bundle = ingest.load(DATA)
+        cls.facts = compute.extract(cls.bundle)
+
+    def _deck(self, variant, fact):
+        return {
+            "deck_title": "产品线分化",
+            "slides": [
+                {"layout": "title", "title": "一条线在加速，另一条没有跟上"},
+                {"layout": "chart", "title": "三条线并不同步", "fact": fact,
+                 "variant": variant, "bullets": ["硬件最陡", "服务走平", "差距拉大"]},
+                {"layout": "closing", "title": "先把资源压到强的一条线"},
+            ],
+        }
+
+    def test_variant_reaches_the_plan(self) -> None:
+        multi = next(f for f in self.facts if f.series)
+        res = agent.plan(self.bundle, self.facts,
+                         client=Fake([self._deck("multi", multi.id)]))
+        self.assertEqual(res.planner, "model", res.log)
+        self.assertEqual(res.plan.slides[1].variant, "multi")
+
+    def test_unknown_variant_is_dropped(self) -> None:
+        res = agent.plan(self.bundle, self.facts,
+                         client=Fake([self._deck("sunburst", "f1")]))
+        self.assertEqual([s.layout for s in res.plan.slides][1], "chart")
+        self.assertEqual(res.plan.slides[1].variant, "")
+
+    def test_heatmap_needs_two_facts(self) -> None:
+        res = agent.plan(self.bundle, self.facts,
+                         client=Fake([self._deck("heatmap", "f1")]))
+        self.assertEqual(res.plan.slides[1].variant, "")
+
+    def test_style_notes_do_not_discard_a_model_deck(self) -> None:
+        """Three chart pages in a row is a note, not a reason to fall back."""
+        deck = {
+            "deck_title": "三张图",
+            "slides": [
+                {"layout": "title", "title": "先看三个数字"},
+                {"layout": "chart", "title": "销售额在涨", "fact": "f1"},
+                {"layout": "chart", "title": "订单数在涨", "fact": "f5"},
+                {"layout": "chart", "title": "客单价在涨", "fact": "f9"},
+                {"layout": "closing", "title": "把结论带走"},
+            ],
+        }
+        res = agent.plan(self.bundle, self.facts, client=Fake([deck, deck]))
+        self.assertEqual(res.planner, "model", res.log)
+        self.assertTrue(any("版式建议" in line for line in res.log), res.log)

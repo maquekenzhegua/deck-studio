@@ -26,7 +26,7 @@ from .llm import Client
 
 LAYOUTS = {
     "title", "section", "key_figure", "kpi_row", "chart", "table",
-    "bullets", "image_full", "split_image", "closing",
+    "bullets", "image_full", "split_image", "closing", "quote", "notes", "compare",
 }
 
 # Titles that are noun phrases. "销售情况分析" tells the reader nothing; the
@@ -58,7 +58,12 @@ SYSTEM = """你是一位给中国公司做汇报的资深顾问。你写的不�
 - title       封面。大标题写这份汇报的结论，不是"XX年度汇报"这种标签
 - key_figure  整页只讲一个数字 + 一句解释。用于最重要的那个发现
 - kpi_row     3–4 个数字并排，用于一组同量级的指标。fact 写成 "f1,f2,f3"
-- chart       图表 + 最多 3 条要点。必须绑定一个 series/breakdown 事实
+- chart       图表 + 最多 3 条要点。必须绑定一个 series/breakdown 事实。
+              可选 variant 决定画法：
+              · "multi"   一条时间轴上按类别分面（"multi"），适合 2–4 条产品线；
+              · "donut"   占比环图，适合 3–5 项的构成，且总量本身有意义；
+              · "heatmap" 记分卡，fact 写多个同维度事实 "f10,f12"，用于多维对比；
+              不写 variant 就是普通条形/折线图。
 - table       明细表，用于需要逐项对照的排名或构成。必须绑定一个 breakdown 事实
 - bullets     纯要点页，用于没有数据的判断
 - image_full  整页一张图 + 一句说明。必须绑定一张图
@@ -119,6 +124,10 @@ class Slide:
     image: str | None = None
     note: str = ""
     bullets: list[str] = field(default_factory=list)
+    # Optional rendering variant for a layout (chart: donut / heatmap / multi).
+    # The layout stays "chart" so the rest of the pipeline -- verify, audit,
+    # the UI dropdown -- keeps treating it as one page with a chart on it.
+    variant: str = ""
 
 
 @dataclass
@@ -155,6 +164,7 @@ class Plan:
                 image=s.get("image") or None,
                 note=str(s.get("note") or ""),
                 bullets=[str(b) for b in (s.get("bullets") or [])],
+                variant=str(s.get("variant") or ""),
             )
             for s in data.get("slides") or []
         ]
@@ -281,6 +291,9 @@ def _validate(data: dict, facts: list[Fact], pics: list[Picture],
             continue
         fact = raw.get("fact")
         image = raw.get("image")
+        variant = str(raw.get("variant") or "").strip()
+        if variant not in ("", "multi", "donut", "heatmap"):
+            variant = ""
 
         if layout in ("chart", "key_figure", "table", "kpi_row") and fact:
             # A multi-fact slide names its facts "f1,f2". Keep only the ids we
@@ -304,6 +317,15 @@ def _validate(data: dict, facts: list[Fact], pics: list[Picture],
                 continue
             fact = None
 
+        if variant and layout != "chart":
+            variant = ""
+        if variant == "heatmap" and len(str(fact or "").split(",")) < 2:
+            variant = ""
+        if variant == "donut":
+            one = next((f for f in facts if f.id == str(fact).split(",")[0]), None)
+            if one is None or not (3 <= len(one.points) <= 5):
+                variant = ""
+
         if layout in ("image_full", "split_image") and image not in pic_ids:
             continue
 
@@ -316,6 +338,7 @@ def _validate(data: dict, facts: list[Fact], pics: list[Picture],
                 image=image if image in pic_ids else None,
                 note=str(raw.get("note") or "").strip(),
                 bullets=bullets,
+                variant=variant,
             )
         )
 

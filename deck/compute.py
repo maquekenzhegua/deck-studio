@@ -61,6 +61,10 @@ class Fact:
     # should print, with the category demoted to a label above it.
     number: str = ""
     top: str = ""
+    # Multi-series facts (one line per category over the same time axis). The
+    # single-series `points` cannot express "which product line is carrying
+    # the quarter", which is the question a portfolio chart answers.
+    series: dict[str, list[tuple[str, float]]] = field(default_factory=dict)
 
     def as_prompt(self) -> dict[str, Any]:
         d: dict[str, Any] = {"id": self.id, "kind": self.kind, "label": self.label, "value": self.value}
@@ -224,6 +228,42 @@ def _series_fact(table: Table, tcol: str, vcol: str, unit: str, agg: str, idx: i
     )
 
 
+def _multi_fact(table: Table, tcol: str, ccol: str, vcol: str,
+                unit: str, agg: str, idx: int) -> Fact | None:
+    """One line per category across time — small multiples instead of one total."""
+    df = table.df[[tcol, ccol, vcol]].copy()
+    df[tcol] = pd.to_datetime(df[tcol], errors="coerce", format="mixed")
+    df[ccol] = df[ccol].astype(str)
+    df = df.dropna()
+    if len(df) < 8:
+        return None
+    how = "mean" if agg == "mean" else "sum"
+    grouped: dict[str, list[tuple[str, float]]] = {}
+    for cat, part in df.groupby(ccol, sort=False):
+        g = part.groupby(tcol)[vcol].agg(how).sort_index()
+        if len(g) < 4:
+            continue
+        year = int(g.index[0].year)
+        grouped[str(cat)] = [(_period_label(pd.Timestamp(k), year), float(v)) for k, v in g.items()]
+    if len(grouped) < 2 or len(grouped) > 4:
+        return None
+    totals = {k: sum(v for _, v in pts) for k, pts in grouped.items()}
+    if not any(totals.values()):
+        return None
+    total = sum(totals.values())
+    # The series that moved most against the others is the story; a portfolio
+    # where everything moves together is a total, not a comparison.
+    shares = sorted((v / total for v in totals.values()), reverse=True)
+    spread = shares[0] - shares[-1]
+    label = f"{vcol} 按 {ccol}（逐期）"
+    return Fact(
+        id=f"f{idx}", kind="multi", label=label, value=_display(total, unit), raw=total,
+        source=f"{table.name} · {vcol} / {ccol}", column=vcol, unit=unit, agg=agg,
+        chart="multiline", change=None, score=2.0 + spread * 2.0,
+        number=_display(total, unit), top=max(totals, key=totals.get), series=grouped,
+    )
+
+
 def _breakdown_fact(table: Table, ccol: str, vcol: str, unit: str, agg: str, idx: int) -> Fact | None:
     df = table.df[[ccol, vcol]].copy()
     df[ccol] = df[ccol].astype(str)
@@ -313,6 +353,13 @@ def extract(bundle: Bundle) -> list[Fact]:
             if tcol:
                 idx += 1
                 f = _series_fact(table, tcol, vcol, unit, agg, idx)
+                if f:
+                    facts.append(f)
+                else:
+                    idx -= 1
+            if tcol and cats:
+                idx += 1
+                f = _multi_fact(table, tcol, cats[0], vcol, unit, agg, idx)
                 if f:
                     facts.append(f)
                 else:

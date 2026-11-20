@@ -47,6 +47,9 @@ class Picture:
     width: int
     height: int
     caption: str = ""      # set by the vision pass, empty until then
+    kind: str = ""         # photo | chart | screenshot | logo | page | flat
+    palette: list[dict] = field(default_factory=list)
+    note: str = ""
 
 
 @dataclass
@@ -75,6 +78,7 @@ class Bundle:
     pictures: list[Picture] = field(default_factory=list)
     outlines: list[Outline] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
+    meta: dict = field(default_factory=dict)
 
     def summary(self) -> str:
         bits = []
