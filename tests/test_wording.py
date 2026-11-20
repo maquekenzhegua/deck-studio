@@ -67,3 +67,21 @@ class WordingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StutterTest(unittest.TestCase):
+    """A model repeating the subject after the metric reads as a typo."""
+
+    def test_subject_is_not_repeated_after_the_metric(self):
+        from deck.render import subst
+        self.assertEqual(subst("华东同比华东 34.0% 为六区最高", {}),
+                         "华东同比 34.0% 为六区最高")
+
+    def test_ordinary_text_is_left_alone(self):
+        from deck.render import subst
+        for text in ("华北 -4.0%，东北 -12.0%", "销售额 2,502 万", "这就是全部"):
+            self.assertEqual(subst(text, {}), text)
+
+    def test_repeated_punctuation_collapses(self):
+        from deck.render import subst
+        self.assertEqual(subst("先看趋势，，再看结构", {}), "先看趋势，再看结构")

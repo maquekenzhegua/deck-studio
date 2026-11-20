@@ -154,6 +154,35 @@ def _split_lead(text: str) -> tuple[str, str]:
     return "", text
 
 
+def _wrap_nice(text: str, width, size, min_pt: float = 24) -> tuple[str, object]:
+    """Wrap, then refuse to leave one or two characters on the last line.
+
+    A headline ending in a lone 速 is the sort of thing a reader sees before
+    they read the words. Shrinking a point at a time is usually enough to
+    rebalance the break; below the floor we accept the wrap we have.
+    """
+    from pptx.util import Pt as _Pt
+    size = _Pt(size.pt) if hasattr(size, "pt") else _Pt(size)
+    # First: a clause must fit on one line at this size. Otherwise the wrapper
+    # falls back to cutting between characters, which is how "同比增速" ends up
+    # split as "同 / 比增速".
+    limit = float(width) / 12700.0 * 0.995
+    parts = [p.strip() for p in re.split(r"(?<=[，。；：、,;:])", str(text)) if p.strip()]
+    longest = max(parts, key=lambda p: text_width_pt(p, size.pt)) if parts else ""
+    while size.pt > min_pt and longest and text_width_pt(longest, size.pt) > limit:
+        size = _Pt(size.pt - 1)
+    wrapped = _wrap_clauses(text, width, size.pt)
+    for _ in range(8):
+        lines = wrapped.split("\n")
+        if len(lines) < 2 or min(len(x) for x in lines) >= 4:
+            break
+        if size.pt <= min_pt:
+            break
+        size = _Pt(size.pt - 1)
+        wrapped = _wrap_clauses(text, width, size.pt)
+    return wrapped, size
+
+
 def _wrap_clauses(text: str, width, size_pt: float) -> str:
     """Break a Chinese headline at punctuation, never inside a word.
 
@@ -483,23 +512,29 @@ def statement(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
              bold=True, spacing=2.6)
     title = subst(s.title, facts)
     size = _fit(title, Inches(6.15), Inches(2.15), 34, 24, 1.12)
-    title = _wrap_clauses(title, Inches(6.05), size.pt)
+    title, size = _wrap_nice(title, Inches(6.05), size, 24)
     add_text(slide, MARGIN_X, Inches(1.02), Inches(6.15), Inches(2.2),
              title, theme, size=size, color=_rgb(theme.ink), bold=True,
              font="headline", line_spacing=1.12)
-    add_rect(slide, MARGIN_X, Inches(3.42), Inches(0.72), Emu(38100), _rgb(theme.accent))
-    note_end = 3.10
+    # The rule and the note follow the headline instead of sitting at a fixed
+    # 3.42in: a two-line title left a 1.2in hole before the argument started.
+    title_h = title.count("\n") * size.pt * 1.12 / 72.0 + size.pt * 1.12 / 72.0
+    accent_y = 1.02 + title_h + 0.30
+    add_rect(slide, MARGIN_X, Inches(accent_y), Inches(0.72), Emu(38100),
+             _rgb(theme.accent))
+    note_end = accent_y - 0.32
     if s.note:
         note = subst(s.note, facts)
-        add_text(slide, MARGIN_X, Inches(3.64), Inches(5.85), Inches(1.95),
+        note_y = accent_y + 0.24
+        add_text(slide, MARGIN_X, Inches(note_y), Inches(5.85), Inches(1.95),
                  note, theme, size=Pt(16.5), color=_rgb(theme.ink2), line_spacing=1.45)
         nlines = estimate_lines(note, Inches(5.75), 16.5)
-        note_end = 3.64 + nlines * 16.5 * 1.45 / 72.0
+        note_end = note_y + nlines * 16.5 * 1.45 / 72.0
     if f:
         src = (f.source or "").split(" / ")[0]
         # Sit the source under the argument instead of pinning it to the foot:
         # a 1.7in hole between note and source reads as a missing element.
-        add_text(slide, MARGIN_X, Inches(max(note_end + 0.55, 4.55)),
+        add_text(slide, MARGIN_X, Inches(max(note_end + 0.45, 3.92)),
                  Inches(6.2), Inches(0.24),
                  f"{_clean_label(f.label)}　·　{Path(src).name}", theme, size=Pt(9),
                  color=_rgb(theme.muted), spacing=0.4)
@@ -542,6 +577,17 @@ def statement(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                 if len(ranked) > 1 and ranked[1][1]:
                     extra += f"，比第二名高 {(abs(top[1]) / abs(ranked[1][1]) - 1) * 100:.0f}%"
                 sub = "  ·  ".join(f"{n} {_short(v, f.unit)}" for n, v in ranked[1:4])
+        # Centre the number and its caption in the panel: with no sub-line the
+        # old fixed offsets left 2.4in of beige under the label, which reads as
+        # a missing element rather than as breathing room.
+        bottom = 3.92 + 0.34
+        if extra:
+            bottom += 0.38
+        if f.change is not None:
+            bottom += 0.36
+        if sub:
+            bottom += 0.30 * max(1, estimate_lines(sub, Inches(4.85), 12.5))
+        dy = max(-0.30, (0.92 + (5.72 - (bottom - 2.04)) / 2) - 2.04)
         size = _fit(number, Inches(4.65), Inches(1.55), 92, 54, 1.0)
         # A hero number must never wrap: PowerPoint will happily break between
         # "977.2" and "万", which drops a lone 万 onto the label below.
@@ -559,33 +605,36 @@ def statement(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
             w_digits = text_width_pt(digits, size.pt) * 1.05
             w_unit = text_width_pt(unit, u_size.pt)
             x0 = Inches(7.35) + int((float(Inches(5.15)) - (w_digits + w_unit + 8) * 12700) / 2)
-            add_text(slide, Emu(x0), Inches(2.04), Inches(4.2), Inches(1.6),
+            add_text(slide, Emu(x0), Inches(2.04 + dy), Inches(4.2), Inches(1.6),
                      digits, theme, size=size, color=_rgb(theme.accent), bold=True,
                      font="headline", line_spacing=1.0, spacing=-2.0, wrap=False)
             add_text(slide, Emu(x0 + int((w_digits + 8) * 12700)),
-                     Inches(2.04 + size.pt * 0.50 / 72.0), Inches(1.2), Inches(0.8),
+                     Inches(2.04 + dy + size.pt * 0.50 / 72.0), Inches(1.2), Inches(0.8),
                      unit, theme, size=u_size, color=_rgb(theme.accent), bold=True,
                      font="headline", line_spacing=1.0, wrap=False)
         else:
-            add_text(slide, Inches(7.35), Inches(2.12), Inches(5.15), Inches(1.55),
+            add_text(slide, Inches(7.35), Inches(2.12 + dy), Inches(5.15), Inches(1.55),
                      number, theme, size=size, color=_rgb(theme.accent), bold=True,
                      font="headline", align="center", line_spacing=1.0, spacing=-2.0,
                      wrap=False)
-        add_text(slide, Inches(7.45), Inches(3.92), Inches(4.95), Inches(0.34),
+        add_text(slide, Inches(7.45), Inches(3.92 + dy), Inches(4.95), Inches(0.34),
                  label, theme, size=Pt(12),
                  color=_rgb(theme.ink2), bold=True, align="center", spacing=1.2)
         if extra:
-            add_text(slide, Inches(7.45), Inches(4.30), Inches(4.95), Inches(0.30),
+            add_text(slide, Inches(7.45), Inches(4.30 + dy), Inches(4.95), Inches(0.30),
                      extra, theme, size=Pt(12), color=_rgb(theme.accent),
                      bold=True, align="center")
         if f.change is not None:
-            add_text(slide, Inches(7.45), Inches(4.66 if extra else 4.30),
+            add_text(slide, Inches(7.45), Inches((4.66 if extra else 4.30) + dy),
                      Inches(4.95), Inches(0.30),
                      f"同比 {fmt.signed_pct(f.change)}", theme, size=Pt(12),
                      color=_rgb(theme.negative if f.change < 0 else theme.accent),
                      bold=True, align="center")
         if sub:
-            add_text(slide, Inches(7.45), Inches(5.32), Inches(4.95), Inches(0.9),
+            # The tail line sits right under whatever came before it. A fixed
+            # 5.32in left a one-inch hole on pages without an extra line.
+            sub_y = 4.30 + 0.40 + dy
+            add_text(slide, Inches(7.45), Inches(sub_y), Inches(4.95), Inches(0.9),
                      sub, theme, size=Pt(12.5), color=_rgb(theme.muted),
                      align="center", line_spacing=1.3)
     page_number(slide, idx, theme, total)

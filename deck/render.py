@@ -48,12 +48,27 @@ FOOT_TOP = SLIDE_H - MARGIN_BOTTOM - Inches(0.10)
 
 # --- helpers --------------------------------------------------------------
 
+def tidy(text: str) -> str:
+    """Collapse the stutters a language model leaves behind.
+
+    "华东同比华东 34.0%" is the commonest one: the subject gets restated after
+    the metric. In a finished deck that reads as a typo, and a deterministic
+    fix is cheaper and safer than another planning round.
+    """
+    if not text:
+        return text
+    out = re.sub(r"([\u4e00-\u9fa5]{2,4})(同比|环比)\1", r"\1\2", text)
+    out = re.sub(r"([\u4e00-\u9fa5])\1{2,}", r"\1\1", out)
+    out = re.sub(r"[，,]{2,}", "，", out)
+    return out.strip()
+
+
 def subst(text: str, facts: dict[str, Fact]) -> str:
     """Replace {{f3}} with the computed display string."""
     def repl(m: re.Match[str]) -> str:
         f = facts.get(m.group(1))
         return f.value if f else m.group(0)
-    return PLACEHOLDER.sub(repl, text or "")
+    return tidy(PLACEHOLDER.sub(repl, text or ""))
 
 
 def _ids(slide: Slide) -> list[str]:
