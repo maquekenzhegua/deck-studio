@@ -137,3 +137,19 @@ class AutoSecondMeasureTest(unittest.TestCase):
         self.assertTrue(mate)
         head = (mate[0].column or mate[0].label).split("按")[0].strip()[:6]
         self.assertIn(head, text)
+
+
+class PhotoEssayTest(unittest.TestCase):
+    """A run of picture plates is a form, not a template rut."""
+
+    def test_photo_deck_scores_high(self):
+        from deck import compose, ingest, render2
+        here = Path(__file__).resolve().parent.parent
+        src = here / "samples" / "photos"
+        bundle = ingest.load(src)
+        plan = compose.draft_pictures(bundle)
+        out = Path(tempfile.mkdtemp()) / "photos.pptx"
+        render2.build(plan, {}, bundle.pictures, out)
+        report = check(out)
+        self.assertGreaterEqual(report["score"], 95, report["issues"])
+        self.assertEqual(report["ruts"], 0)

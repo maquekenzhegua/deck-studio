@@ -175,8 +175,11 @@ def check(plan: Plan, facts: list[Fact]) -> list[Problem]:
             )
 
         # Three identical layouts in a row means the deck was assembled by a
-        # rule rather than written.
-        if s.layout == run_layout:
+        # rule rather than written — except a photo essay, where repeating the
+        # same frame is the form.
+        if s.layout in ("image_full", "split_image"):
+            run_layout, run_len = "", 0
+        elif s.layout == run_layout:
             run_len += 1
             if run_len >= 3:
                 problems.append(Problem(i, "style", f"连续 {run_len} 页都是 {s.layout}，版式要有变化"))

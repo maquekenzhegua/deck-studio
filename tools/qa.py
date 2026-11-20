@@ -57,7 +57,9 @@ def check(pptx: str | Path, png_dir: str | Path | None = None) -> dict:
 
     for idx in range(len(prs.slides)):
         per_slide.append({"slide": idx + 1, "shapes": 0, "chars": 0,
-                          "ink": None, "issues": []})
+                          "ink": None, "photo": False, "issues": []})
+
+
 
     for idx, shape, text, sizes in _text_shapes(prs):
         row = per_slide[idx]
@@ -114,11 +116,25 @@ def check(pptx: str | Path, png_dir: str | Path | None = None) -> dict:
                 per_slide[idx]["issues"].append(msg)
                 issues.append({"slide": idx + 1, "kind": "ink", "detail": msg})
 
+    # A page carried by a picture and little text is a plate; a run of plates
+    # is an essay, not a rut. Measure the picture, not the layout name.
+    for idx, slide in enumerate(prs.slides):
+        filled = 0
+        for shape in slide.shapes:
+            if getattr(shape, "shape_type", None) == 13:  # MSO_SHAPE_TYPE.PICTURE
+                filled += shape.width * shape.height
+        row = per_slide[idx]
+        row["photo"] = filled > W * H * 0.18 and row["chars"] < 200
+
     # Three consecutive slides with the same structure reads as a template rut.
     ruts = 0
-    shapes = [r["shapes"] for r in per_slide]
+    # A plate and a closing page can share a shape count and look nothing
+    # alike, so the signature carries whether the page is picture-led.
+    shapes = [(r["shapes"], r["photo"]) for r in per_slide]
     for i in range(len(shapes) - 2):
         if shapes[i] and shapes[i] == shapes[i + 1] == shapes[i + 2]:
+            if all(per_slide[j]["photo"] for j in (i, i + 1, i + 2)):
+                continue
             ruts += 1
 
     score = 100
