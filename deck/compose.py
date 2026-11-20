@@ -217,6 +217,32 @@ def _join(names: list[str]) -> str:
 # --------------------------------------------------------------------------
 
 
+def _thin(bundle: Bundle) -> Plan:
+    """No facts, no docs: say what is missing instead of staging an empty deck.
+
+    A single column of numbers is not a story, and a three-page deck that says
+    "经营复盘" while showing nothing is worse than a short honest page.
+    """
+    names = "、".join(Path(t.source).name for t in bundle.tables[:3]) or "这份材料"
+    asks = [
+        "再加一列可以比较的维度：时间（月/季）或者分类（区域、产品、渠道）",
+        "补一列参照：同比、占比，或者目标值——没有参照就没有结论",
+        "把想说明的那句话写进文档：一句话就够，模型会照它组织证据",
+    ]
+    return Plan(
+        deck_title="这份材料还讲不出结论",
+        subtitle="缺的不是设计，是可比较的数据",
+        slides=[
+            Slide("title", "这份材料还讲不出结论",
+                  note=f"{names} 里只有孤立的数字，没有时间轴，也没有分类。"),
+            Slide("bullets", "先补三样，再谈版式", bullets=asks,
+                  note="补齐之后重新生成：页序、图表和标题都会跟着数据重排。"),
+            Slide("closing", "补齐后再生成",
+                  bullets=["一列时间或分类", "一列参照", "一句结论"]),
+        ],
+    )
+
+
 def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
           subtitle: str = "") -> Plan:
     used: set[str] = set()
@@ -238,6 +264,8 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
     slow = _top(duration) if duration else ""
     funnel_first = funnel.points[0][0] if funnel else ""
     funnel_last = funnel.points[-1][0] if funnel else ""
+    if not facts:
+        return _thin(bundle)
 
     # --- cover: the thesis the rest of the deck has to earn -----------------
     parts: list[str] = []
@@ -249,9 +277,15 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
         parts.append(f"{_bottom(ratio)}垫底")
     if slow:
         parts.append(f"效率卡在{slow}")
+    if not parts:
+        # No trend to lead with: lead with the spread that is actually in the
+        # data, instead of printing the same "经营复盘" on every dataset.
+        bd = next((f for f in facts if f.kind == "breakdown" and len(f.points) > 1), None)
+        if bd:
+            ranked = sorted(bd.points, key=lambda kv: -abs(kv[1]))
+            parts.append(f"{ranked[0][0]}{_metric(bd)}最高")
+            parts.append(f"{ranked[-1][0]}最低")
     thesis = "，".join(parts) if parts else (deck_title or "经营复盘")
-    if not parts and not deck_title:
-        thesis = "经营复盘"
 
     sub_bits: list[str] = []
     if trend:
@@ -338,7 +372,7 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
                 seen_units.add(want)
         if len(picks) >= 2:
             slides.append(Slide(
-                layout="kpi_row", title="先把三个数对齐：规模、效率、结构",
+                layout="kpi_row", title="先把这几个数对齐：规模与结构",
                 fact=",".join(f.id for f in picks[:3]),
                 note=f"{len(picks[:3])} 张卡片来自不同口径；先确认它们说的是同一段时间、同一批对象。"))
 
@@ -580,11 +614,25 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
             acts.append(f"把{top_f.points[0][0]}的打法复制出去，别只靠它一个")
             rich.append(f"{acts[-1]}：它占 {share:.0%} 的{top_f.column}，"
                         f"集中度太高，第二名只有 {abs(top_f.points[1][1]) / total:.0%}。")
+    if len(acts) < 2 and money:
+        # A portfolio answer, not a new claim: both numbers are shares of the
+        # same column and appear on the chart page.
+        f = money[0]
+        ranked = sorted(f.points, key=lambda kv: -abs(kv[1]))
+        if len(ranked) > 2:
+            total = sum(abs(v) for _, v in ranked) or 1.0
+            hi, lo = ranked[0], ranked[-1]
+            acts.append(f"把资源从{lo[0]}挪一点给{hi[0]}")
+            rich.append(f"{acts[-1]}：{hi[0]} 占 {abs(hi[1]) / total:.0%} 的{f.column}，"
+                        f"{lo[0]} 只有 {abs(lo[1]) / total:.0%}，差距不是一点。")
     acts, rich = acts[:3], rich[:3]
 
     if rich:
-        slides.append(Slide(layout="bullets", title="明年的动作，只留三件",
-                            note="", bullets=rich))
+        # The title has to count the same things the page shows. Promising three
+        # moves and printing one is the kind of small lie a reader notices.
+        n = len(rich)
+        title = {1: "明年只做一件事", 2: "明年做两件事"}.get(n, "明年的动作，只留三件")
+        slides.append(Slide(layout="bullets", title=title, note="", bullets=rich))
     # a closing title that names the three moves beats a generic "next steps"
     parts: list[str] = []
     if top_growth:

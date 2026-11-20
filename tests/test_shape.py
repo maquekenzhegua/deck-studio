@@ -9,7 +9,7 @@ import unittest
 
 import pandas as pd
 
-from deck import compose, compute
+from deck import compose, compute, ingest, verify
 from deck.ingest import Bundle, Table
 
 
@@ -56,6 +56,61 @@ class ShapeTest(unittest.TestCase):
         for i in range(2, len(layouts)):
             self.assertFalse(layouts[i] == layouts[i - 1] == layouts[i - 2],
                              f"slides {i - 2}-{i} are all {layouts[i]}")
+
+
+class ThinTest(unittest.TestCase):
+    """One column of numbers is not a deck; say so instead of pretending."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path as P
+        import pandas as pd
+        self.tmp = tempfile.TemporaryDirectory()
+        root = P(self.tmp.name)
+        pd.DataFrame({"金额": [12.4, 18.9, 7.2]}).to_excel(root / "单列.xlsx", index=False)
+        self.bundle = ingest.load(root)
+        self.facts = compute.extract(self.bundle)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_no_facts_gets_an_honest_page_not_an_empty_deck(self):
+        self.assertEqual(self.facts, [])
+        plan = compose.draft(self.bundle, self.facts)
+        self.assertLessEqual(len(plan.slides), 4)
+        self.assertIn("讲不出结论", plan.deck_title)
+        self.assertIn("补", " ".join(plan.slides[1].bullets))
+
+
+class FunnelWithoutConversionTest(unittest.TestCase):
+    """Stage names and a steep drop are enough; a conversion column is optional."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path as P
+        import pandas as pd
+        self.tmp = tempfile.TemporaryDirectory()
+        root = P(self.tmp.name)
+        pd.DataFrame({"阶段": ["曝光", "点击", "加购", "下单", "支付"],
+                      "人数": [120000, 24000, 6100, 1800, 640]}).to_excel(root / "转化.xlsx", index=False)
+        self.bundle = ingest.load(root)
+        self.facts = compute.extract(self.bundle)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_stage_shape_is_recognised_as_a_process(self):
+        self.assertTrue(any(f.chart == "funnel" for f in self.facts))
+        plan = compose.draft(self.bundle, self.facts)
+        self.assertIn("table", [s.layout for s in plan.slides])
+        self.assertEqual(verify.check(plan, self.facts), [])
+
+    def test_the_title_of_the_action_page_matches_what_is_on_it(self):
+        plan = compose.draft(self.bundle, self.facts)
+        for s in plan.slides:
+            if s.layout == "bullets":
+                n = len(s.bullets)
+                self.assertNotIn("三件", s.title if n < 3 else "")
 
 
 if __name__ == "__main__":

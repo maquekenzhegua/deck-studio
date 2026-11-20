@@ -315,9 +315,13 @@ def _breakdown_fact(table: Table, ccol: str, vcol: str, unit: str, agg: str, idx
                  and isinstance(c, str) and CONVERSION.search(c)), None)
     stage_hits = sum(bool(STAGES.search(str(k))) for k, _ in rows)
     looks_like_stages = stage_hits >= max(2, len(rows) // 2 + len(rows) % 2)
-    is_funnel = (bool(conv) and vcol != conv and len(order) >= 3
-                 and looks_like_stages
-                 and all(a > b for a, b in zip(order, order[1:])))
+    # A stage table does not always carry a conversion column; the shape can
+    # still be a funnel. Require the entry stage to be at least twice the exit
+    # stage so a gently declining ranking is not relabelled a process.
+    shrinks_like_a_process = order[0] > 0 and order[-1] / order[0] <= 0.5
+    is_funnel = (len(order) >= 3 and looks_like_stages
+                 and all(a > b for a, b in zip(order, order[1:]))
+                 and ((bool(conv) and vcol != conv) or shrinks_like_a_process))
     return Fact(
         id=f"f{idx}", kind="breakdown",
         label=f"{vcol} 按 {ccol}{note}",

@@ -84,6 +84,15 @@ def _allowed(facts: list[Fact]) -> set[str]:
                     share = abs(v) / total * 100
                     ok.add(f"{share:.1f}")
                     ok.add(f"{share:.0f}")
+        # Step conversion is the whole point of a funnel: 640/1800 = 36% is
+        # computed from two printed counts, not invented, so a sentence may
+        # quote it as long as the counts are on the page.
+        if f.chart == "funnel" and len(f.points) > 1:
+            for (_, prev), (_, cur) in zip(f.points, f.points[1:]):
+                if prev:
+                    step = abs(cur) / abs(prev) * 100
+                    ok.add(f"{step:.1f}")
+                    ok.add(f"{step:.0f}")
     return ok
 
 

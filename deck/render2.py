@@ -951,7 +951,7 @@ def numbers(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
         # One or two claims on a page look stranded at the top; spread them
         # over the field instead of leaving a 4in hole underneath.
         row = min(1.90, 4.60 / n) if n < 3 else 1.64
-        y = 1.86 if n >= 2 else 2.70
+        y = 2.34 if n == 2 else (1.86 if n >= 2 else 2.70)
         for i, text in enumerate(items):
             add_rect(slide, MARGIN_X, Inches(y), CONTENT_W, Emu(6350),
                      _rgb(theme.accent if i == 0 else theme.hair))
