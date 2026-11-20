@@ -155,3 +155,45 @@ class VariantTest(unittest.TestCase):
         res = agent.plan(self.bundle, self.facts, client=Fake([deck, deck]))
         self.assertEqual(res.planner, "model", res.log)
         self.assertTrue(any("版式建议" in line for line in res.log), res.log)
+
+
+class ReviseTest(unittest.TestCase):
+    """A sentence in, a changed outline out — by the model when there is one."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.bundle = ingest.load(DATA)
+        cls.facts = compute.extract(cls.bundle)
+        cls.base = agent.plan(cls.bundle, cls.facts).plan
+
+    def test_revision_replaces_the_outline(self):
+        shorter = outline()
+        shorter["slides"] = [s for s in shorter["slides"] if s["layout"] != "bullets"][:2]
+        fake = Fake([shorter])
+        got = agent.revise(self.base, self.facts, "删掉中间那两页要点", client=fake)
+        self.assertIsNotNone(got)
+        revised, message = got
+        self.assertLess(len(revised.slides), len(self.base.slides))
+        self.assertIn("模型改稿", message)
+
+    def test_an_invented_figure_rejects_the_whole_revision(self):
+        bad = outline()
+        bad["slides"].append({"layout": "bullets", "title": "增长 999%",
+                              "bullets": ["一句"]})
+        fake = Fake([bad])
+        got = agent.revise(self.base, self.facts, "加一页", client=fake)
+        # The rules keep the numbers: an invented figure is not a partial win.
+        self.assertIsNone(got)
+
+    def test_a_broken_answer_is_not_a_revision(self):
+        fake = Fake([{"slides": []}])
+        self.assertIsNone(agent.revise(self.base, self.facts, "改一下", client=fake))
+
+    def test_a_timeout_is_not_a_revision(self):
+        fake = Fake([LLMError("HTTP 401")])
+        self.assertIsNone(agent.revise(self.base, self.facts, "改一下", client=fake))
+
+    def test_an_empty_instruction_is_not_a_call(self):
+        fake = Fake([])
+        self.assertIsNone(agent.revise(self.base, self.facts, "   ", client=fake))
+        self.assertEqual(fake.calls, [])

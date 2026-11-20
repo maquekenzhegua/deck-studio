@@ -463,12 +463,27 @@ def create_app() -> FastAPI:
 
     @app.post("/api/edit")
     def quick_edit(body: EditBody):
-        """A sentence in, a changed outline out. No model, no network."""
+        """A sentence in, a changed outline out.
+
+        With a model configured it is the editor: it can follow "把结论提前、
+        删掉表格" the way a person would. The rule-based editor stays as the
+        floor — it still handles the exact commands, and it takes over when
+        the model is absent, slow, or returns a plan the rules reject.
+        """
         with LOCK:
             plan = STATE["plan"]
             if plan is None:
                 raise HTTPException(409, "先上传资料")
+            facts = STATE.get("facts") or []
             new_plan, message = edit.apply(plan, body.text)
+            client = client_for_model()
+            if client is not None and facts:
+                got = agent.revise(plan, facts, body.text, client=client,
+                                   pictures=(STATE["bundle"].pictures if STATE.get("bundle") else []))
+                if got is not None:
+                    new_plan, message = got
+                    STATE["planner"] = {"who": "model", "model": client.model,
+                                        "label": f"{client.model} 主导", "log": [message]}
             # One vocabulary, in one place: the endpoint must not keep its own
             # copy of the aliases or "换成模板" silently does nothing.
             tid = edit.theme_for(body.text)
@@ -477,7 +492,8 @@ def create_app() -> FastAPI:
             STATE["plan"] = new_plan
             changed = len(new_plan.slides) != len(plan.slides) or new_plan != plan
         return {"plan": asdict(new_plan), "message": message,
-                "theme": STATE.get("theme"), "changed": bool(changed)}
+                "theme": STATE.get("theme"), "changed": bool(changed),
+                "planner": STATE.get("planner")}
 
     @app.post("/api/reveal")
     def reveal():

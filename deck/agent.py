@@ -150,3 +150,55 @@ def plan(bundle: Bundle, facts: list[Fact], ask: str = "", *, slides: int = 0,
 
     return AgentResult(plan=plan_model, planner="model", model=client.model,
                        revisions=used, log=log)
+
+
+REVISE_SYSTEM = """你是一位汇报顾问，正在按用户的一句话要求修改自己的大纲。
+只改用户点到的地方；没被提到的页面、页序、标题原样保留。
+
+规则不变：
+1. 不许写任何数字，需要数字就写 {{f3}} 这样的占位符（只能引用给到的事实 id）。
+2. 标题必须是判断句；每页一个论点；要点最多 3 条，每条不超过 28 个汉字。
+3. 版式只能从给定清单里选；chart/table/key_figure/kpi_row 必须绑定事实 id。
+4. 输出与输入同构的 JSON：{"deck_title": "...", "subtitle": "...", "slides": [...]}，
+   每页字段：layout / title / fact / image / note / bullets / variant。
+"""
+
+
+def revise(current: Plan, facts: list[Fact], text: str, *, client: Client,
+           pictures: list | None = None) -> tuple[Plan, str] | None:
+    """Let the model take a one-line instruction and rewrite the outline.
+
+    Returns None when the model is unusable or its answer does not survive
+    validation, so the caller can fall back to the rule-based editor. The
+    rules still own numbers: a revision that invents a figure is rejected
+    whole rather than shipped partially.
+    """
+    if not text.strip():
+        return None
+    prompt = (
+        "## 用户的要求\n" + text.strip()
+        + "\n\n## 当前大纲 JSON\n" + current.to_json()
+        + "\n\n## 事实清单（只能引用这些 id）\n"
+        + "\n".join(f"{f.id}: {f.label} = {f.value}" for f in facts[:40])
+        + "\n\n## 可用版式\n" + ", ".join(sorted(_layouts()))
+    )
+    try:
+        data = client.json(REVISE_SYSTEM, prompt, temperature=0.2, max_tokens=3000)
+        revised = _validate(data, facts, pictures or [], None)
+    except (LLMError, ValueError, KeyError):
+        return None
+    if not revised.slides:
+        return None
+    # Numbers are still the program's call: a revision that invents a figure
+    # is rejected whole, not shipped with one bad page.
+    bad = [p for p in verify.check(revised, facts) if p.kind in ("number", "structure")]
+    if bad:
+        return None
+    revised.deck_title = revised.deck_title or current.deck_title
+    revised.subtitle = revised.subtitle or current.subtitle
+    return revised, f"模型改稿：{len(current.slides)} → {len(revised.slides)} 页"
+
+
+def _layouts() -> list[str]:
+    from .plan import LAYOUTS
+    return sorted(LAYOUTS)
