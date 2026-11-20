@@ -101,8 +101,18 @@ def plan(bundle: Bundle, facts: list[Fact], ask: str = "", *, slides: int = 0,
          client: Client | None = None, revisions: int = 1) -> AgentResult:
     """Model first, program as the fallback and the referee."""
     if not facts:
+        # No table, no chart, no KPI: documents give extracts, pictures give
+        # the scene itself. Either way a model would only be inventing.
+        pics = list(getattr(bundle, "pictures", []) or [])
+        docs = list(getattr(bundle, "docs", []) or [])
+        if docs:
+            return AgentResult(plan=compose.draft_text(bundle), planner="offline",
+                               log=["没有数据表，按文档出稿"])
+        if pics:
+            return AgentResult(plan=compose.draft_pictures(bundle), planner="offline",
+                               log=[f"没有数据表，按 {len(pics)} 张图片出稿"])
         return AgentResult(plan=compose.draft_text(bundle), planner="offline",
-                           log=["没有数据表，按文档出稿"])
+                           log=["这份材料里没有可用的内容"])
 
     # A subtitle that talks about fact ids is planning scaffolding, not a
     # sentence a room should read. It arrives that way when the UI passes an

@@ -493,14 +493,16 @@ def create_app() -> FastAPI:
             pictures = list(getattr(STATE["bundle"], "pictures", []) or [])
             theme = body.theme if body.theme in THEMES else "navy"
         if not facts:
-            # Text-only uploads still deserve a deck: a claim, three extracts,
-            # a close. No charts, because there is nothing to chart.
-            docs = list(getattr(STATE["bundle"], "docs", []) or [])
-            if not docs:
-                raise HTTPException(409, "这份材料里既没有表格，也没有正文")
+            # Documents and pictures still deserve a deck: extracts, or the
+            # scene itself. No charts, because there is nothing to chart.
+            bundle = STATE["bundle"]
+            docs = list(getattr(bundle, "docs", []) or [])
+            pics = list(getattr(bundle, "pictures", []) or [])
+            if not docs and not pics:
+                raise HTTPException(409, "这份材料里既没有表格，也没有正文和图片")
         plan = plan_from(body.plan) if body.plan and body.plan.get("slides") else None
         if plan is None and not facts:
-            plan = compose.draft_text(STATE["bundle"])
+            plan = compose.draft_text(bundle) if docs else compose.draft_pictures(bundle)
         if plan is None:
             plan = plan_from(body.plan)
         if not plan.slides:

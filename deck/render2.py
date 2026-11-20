@@ -248,12 +248,23 @@ def _value(v: float, unit: str | None) -> str:
 # --------------------------------------------------------------------------
 
 
+def _kicker(plan) -> tuple[str, str]:
+    """What kind of material is this? A photo folder is not a quarterly review."""
+    has_fact = any(s.fact for s in plan.slides)
+    layouts = {s.layout for s in plan.slides}
+    if not has_fact and "image_full" in layouts:
+        return "图片材料", "FIELD NOTES"
+    if not has_fact and (layouts & {"notes", "quote"}):
+        return "文档要点", "NOTES"
+    return "经营复盘", "STRATEGY REVIEW"
+
+
 def cover(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
           pics: dict[str, Picture] | None = None) -> None:
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(slide, theme, dark=True)
     photo = next((p for p in (pics or {}).values()
-                  if p.kind == "photo" and Path(p.path).exists()), None)
+                  if p.kind in ("photo", "") and Path(p.path).exists()), None)
     if photo:
         # Real decks open on a photograph, not a gradient: the image carries
         # the subject, a scrim carries the words.
@@ -282,7 +293,7 @@ def cover(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
 
     add_rect(slide, MARGIN_X, Inches(1.26), Inches(0.62), Emu(38100), _rgb(theme.accent))
     add_text(slide, MARGIN_X, Inches(1.44), Inches(7.0), Inches(0.26),
-             "经营复盘  ·  STRATEGY REVIEW", theme, size=Pt(10),
+             "  ·  ".join(x for x in _kicker(plan) if x), theme, size=Pt(10),
              color=_rgb(theme.dark_muted), bold=True, spacing=2.6)
 
     title = subst(plan.deck_title, facts)
@@ -320,7 +331,7 @@ def cover(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     add_rect(slide, MARGIN_X, Inches(6.54), CONTENT_W, Emu(6350),
              _mix(theme.dark, "#FFFFFF", 0.22))
     year = _year(plan)
-    tail = f"{year} 年经营复盘" if year else "经营复盘"
+    tail = f"{year} 年{_kicker(plan)[0]}" if year else _kicker(plan)[0]
     add_text(slide, MARGIN_X, Inches(6.68), Inches(6.0), Inches(0.24),
              f"{len(plan.slides)} 页  ·  {tail}", theme, size=Pt(9),
              color=_rgb(theme.dark_muted), spacing=1.4)
@@ -1118,8 +1129,11 @@ def image_full(prs, plan: Plan, s: Slide, facts: dict[str, Fact],
                      _rgb(theme.soft))
         slide.shapes.add_picture(src, Emu(x), Emu(y), Emu(w), Emu(h))
         meta = p.name if p else ""
-        if p and p.kind == "chart":
-            meta = f"{meta}　·　原始图表，未重绘"
+        if p:
+            # Say what the file is; a flat graphic is not automatically a chart.
+            kind = {"chart": "原始图表", "page": "文档页",
+                    "screenshot": "界面截图", "photo": "现场照片"}.get(p.kind, "原始文件")
+            meta = f"{meta}　·　{kind}，未重绘"
 
     caption = "　·　".join(x for x in (meta, subst(s.note, facts) if s.note else "") if x)
     if caption:

@@ -721,3 +721,52 @@ def draft_text(bundle) -> Plan:
         ))
     slides.append(Slide("closing", "把这几句话带进讨论", bullets=[]))
     return Plan(deck_title, "文档要点", slides)
+
+
+def _pretty_pic(name: str) -> str:
+    """`DSC_0412.jpg` is a filename, not a title. Say what the page shows."""
+    stem = _stem(name)
+    bare = re.sub(r"[-_ ]?\d+$", "", stem).strip()
+    if re.fullmatch(r"(?i)hero|img|image|dsc|dscn|dji|photo|pic|screenshot|"
+                    r"截图|照片|图片|现场", bare or ""):
+        return "现场照片"
+    return stem
+
+
+def draft_pictures(bundle) -> Plan:
+    """A deck for a folder of images with no numbers behind them.
+
+    Photos carry context, not quantities. The honest deck is a cover, the
+    pictures themselves at full size (documents get a plate so they stay
+    readable), and one closing line — no chart, no KPI, no invented link
+    between a factory floor and a revenue figure.
+    """
+    pics = [p for p in (getattr(bundle, "pictures", []) or [])][:4]
+    if not pics:
+        return Plan("这次汇报", "图片材料", [Slide("title", "这次汇报"),
+                                             Slide("closing", "接下来做什么")])
+    name = _pretty_pic(pics[0].name or "图片材料")
+    title = f"{name}：先看现场" if len(pics) > 1 else name
+    slides: list[Slide] = [
+        Slide("title", title,
+              note=f"{len(pics)} 张图片，没有数据表：这是一份看图说话的材料。"),
+    ]
+    # The cover already carries the first picture; repeating it on page two
+    # reads as a mistake, so the body starts from the second one.
+    for i, pic in enumerate(pics[1:], 2):
+        kind = getattr(pic, "kind", "") or ""
+        label = _pretty_pic(pic.name)
+        if len(pics) > 1:
+            # Digits in a title have to be backed by a fact; an ordinal is
+            # not a number, so it is spelled the way a person would say it.
+            cn = "一二三四五六七八九"
+            label = f"{label} · 第{cn[i - 1] if i <= 9 else i}张"
+        if kind in ("photo", ""):
+            slides.append(Slide("image_full", label, image=pic.id,
+                                note="现场照片直接铺满整页：它提供的是语境，不是数据。"))
+        else:
+            slides.append(Slide("split_image", f"原始材料：{label}", image=pic.id,
+                                note="原始文件直接上页，未重绘、未二次加工。"))
+    slides.append(Slide("closing", "把这几张图带进讨论",
+                        bullets=["先说清这是哪一段现场", "再说它改变了哪个判断"]))
+    return Plan(title, "图片材料", slides)

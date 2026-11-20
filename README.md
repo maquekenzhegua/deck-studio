@@ -8,7 +8,7 @@
 
 不是一个套模板的「一键生成」。它先把你手上的材料读懂、算清楚，再按一套从 19 份真实 deck（1144 页）里量出来的设计规范排版；模型可以主导论证，但**任何一个数字都必须能指回原始表格**。
 
-> **下载即用**：[Deck Studio 0.7.8 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
+> **下载即用**：[Deck Studio 0.7.9 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
 
 ![Deck Studio](docs/app-window.png)
 
@@ -19,6 +19,7 @@
 | 能力 | 说明 |
 |---|---|
 | 多模态输入 | xlsx / xlsm / csv / docx / pdf / pptx / png / jpg / webp，混着拖进来就行 |
+| 没有数字也能出 | 只有文档就出「结论 + 原文摘录」；只有图片就出「封面 + 现场页 + 收尾」，不编图表、不编数字 |
 | 真的会算 | 从表里抽事实：趋势、区域/产品构成、同比、漏斗、停留；比率用均值，漏斗找瓶颈 |
 | 数字可追溯 | 每页数字渲染前逐项校验，对不上就拦下来（`deck/verify.py`） |
 | 版式自己选 | 封面 / 章节 / 单个数字 / 关键数 / 图表 / 表格 / 对比 / 要点 / 引语 / 图文 / 全幅图 / 收尾 |
@@ -150,7 +151,7 @@ python tools/accept.py
 python -m unittest discover -s tests
 ```
 
-209 条离线测试：数字校验、离线规划、版式与图表、模型主导的降级路径、模型自查、多模态分类、PDF/Excel 原生图表、模板配色、QA 阈值、HTTP 接口、一句话改稿。
+211 条离线测试：数字校验、离线规划、版式与图表、模型主导的降级路径、模型自查、多模态分类、PDF/Excel 原生图表、模板配色、QA 阈值、HTTP 接口、一句话改稿。
 没有网络、没有模型、没有 Office 也能全绿。
 
 ## 目录

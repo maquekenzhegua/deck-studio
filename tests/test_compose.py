@@ -8,10 +8,11 @@ from a fact, and the page order tells a story instead of listing tables.
 from __future__ import annotations
 
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
-from deck import compose, compute, ingest, verify
+from deck import compose, compute, ingest, render2, verify
 
 DATA = Path(__file__).resolve().parent.parent / "samples" / "data"
 
@@ -161,3 +162,40 @@ class TextOnlyTest(unittest.TestCase):
         self.assertIn("-", right)
         self.assertNotIn("+", right)
         self.assertEqual(verify.check(p, compute.extract(b)), [])
+
+class PictureOnlyTest(unittest.TestCase):
+    """Five photos and no spreadsheet is still a deck, just not a chart deck."""
+
+    def _bundle(self):
+        from PIL import Image
+
+        from deck.ingest import Bundle, Picture
+
+        tmp = Path(tempfile.mkdtemp(prefix="deck-pics-"))
+        pics = []
+        for i, colour in enumerate(((200, 80, 60), (40, 90, 140)), 1):
+            path = tmp / f"现场{i}.jpg"
+            Image.new("RGB", (1200, 800), colour).save(path)
+            pics.append(Picture(f"p{i}", f"现场{i}.jpg", str(path), 1200, 800, ""))
+        return Bundle(tables=[], docs=[], pictures=pics, outlines=[], skipped=[])
+
+    def test_a_photo_folder_becomes_a_deck(self):
+        bundle = self._bundle()
+        plan = compose.draft_pictures(bundle)
+        layouts = [s.layout for s in plan.slides]
+        self.assertEqual(layouts[0], "title")
+        self.assertEqual(layouts[-1], "closing")
+        # The cover carries the first picture, so the body starts at the second.
+        self.assertEqual(layouts.count("image_full"), 1)
+        self.assertNotIn("chart", layouts)
+        self.assertNotIn("kpi_row", layouts)
+
+    def test_a_photo_deck_can_be_rendered(self):
+        bundle = self._bundle()
+        plan = compose.draft_pictures(bundle)
+        plan.deck_title = plan.deck_title  # subtitle is what verify reads
+        self.assertEqual(verify.check(plan, []), [])
+        out = Path(tempfile.mkdtemp()) / "pics.pptx"
+        render2.build(plan, [], bundle.pictures, str(out))
+        self.assertGreater(out.stat().st_size, 10_000)
+
