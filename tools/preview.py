@@ -110,7 +110,10 @@ def export_png_lo(pptx: Path, out_dir: Path, width: int = 1600,
                   height: int = 900) -> list[Path]:
     """Render slides from the LibreOffice PDF. Fidelity is high because our
     decks are plain shapes, text and pictures - no SmartArt, no effects."""
-    import fitz  # noqa: PLC0415
+    try:
+        import pymupdf as fitz  # noqa: PLC0415
+    except ImportError:  # pragma: no cover - older wheels
+        import fitz  # noqa: PLC0415
 
     pdf = _lo_pdf(pptx)
     if pdf is None:

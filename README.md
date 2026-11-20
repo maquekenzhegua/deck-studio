@@ -8,7 +8,7 @@
 
 不是一个套模板的「一键生成」。它先把你手上的材料读懂、算清楚，再按一套从 19 份真实 deck（1144 页）里量出来的设计规范排版；模型可以主导论证，但**任何一个数字都必须能指回原始表格**。
 
-> **下载即用**：[Deck Studio 0.8.0 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
+> **下载即用**：[Deck Studio 0.8.1 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
 
 ![Deck Studio](docs/app-window.png)
 
@@ -54,8 +54,11 @@ python run_app.py            # 源码启动（Win10/11 自带 WebView2）
 
 ```bash
 python -m deck.cli facts  samples/data                 # 看看抽出了哪些事实
+python -m deck.cli plan   samples/data --offline -o out/plan.json
 python -m deck.cli build  samples/data --theme editorial --out out/deck.pptx
 python -m deck.cli audit  out/deck.pptx                # 设计规则体检
+python -m deck.cli review samples/data --plan out/plan.json   # 像编辑一样读大纲
+python -m deck.cli notes  samples/data --plan out/plan.json -o out/plan-notes.json
 ```
 
 `--offline` 强制不调用模型；不填任何 Key 时默认就是离线。

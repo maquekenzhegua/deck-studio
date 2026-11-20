@@ -12,13 +12,14 @@ answer it before spending a single token.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import tempfile
 from pathlib import Path
 
 from . import brief as briefing
 from . import compose
-from . import compute, ingest, multimodal, plan as planner, render, render2, verify
+from . import agent, compute, ingest, multimodal, plan as planner, render, render2, review, verify
 from .llm import Client, LLMError
 
 # A Windows console defaults to GBK, and the check marks and Chinese quotes in
@@ -190,6 +191,39 @@ def cmd_build(args) -> int:
     return 0
 
 
+def cmd_review(args) -> int:
+    b = _load(args.input)
+    facts = compute.extract(b)
+    p = planner.Plan.from_json(Path(args.plan).read_text(encoding="utf-8"))
+    findings = review.review(p, facts)
+    if args.json:
+        from dataclasses import asdict
+        print(json.dumps([asdict(f) for f in findings], ensure_ascii=False, indent=2))
+    else:
+        print(review.summary(findings))
+        for f in findings:
+            print(f"  第 {f.page} 页  [{f.level}]  {f.text}")
+    return 0
+
+
+def cmd_notes(args) -> int:
+    b = _load(args.input)
+    facts = compute.extract(b)
+    p = planner.Plan.from_json(Path(args.plan).read_text(encoding="utf-8"))
+    client = Client(model=args.model, base_url=args.base_url)
+    got = agent.notes(p, facts, client=client)
+    if got is None:
+        print("模型这次没写出可用的讲稿（讲稿不许带数字）", file=sys.stderr)
+        return 1
+    new_plan, message = got
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(new_plan.to_json(), encoding="utf-8")
+    print(f"{message} → {out}")
+    print(f"用量：{client.usage.total} tokens", file=sys.stderr)
+    return 0
+
+
 def cmd_audit(args) -> int:
     """Design-rule gate. Separate from `verify` on purpose: verify asks whether the
     deck lies, audit asks whether it is readable."""
@@ -242,6 +276,20 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--classic", action="store_true", help="用旧版渲染器（v1）")
     b.add_argument("--offline", action="store_true", help="不调用模型，按事实离线成稿")
     b.set_defaults(func=cmd_build)
+
+    rv = sub.add_parser("review", help="像编辑一样读大纲，指出问题（不花 token）")
+    rv.add_argument("input")
+    rv.add_argument("--plan", required=True, help="plan.json")
+    rv.add_argument("--json", action="store_true")
+    rv.set_defaults(func=cmd_review)
+
+    nt = sub.add_parser("notes", help="让模型给每页写一句讲稿")
+    nt.add_argument("input")
+    nt.add_argument("--plan", required=True, help="plan.json")
+    nt.add_argument("-o", "--out", default="out/plan-notes.json")
+    nt.add_argument("--model", default=None)
+    nt.add_argument("--base-url", default=None)
+    nt.set_defaults(func=cmd_notes)
 
     a = sub.add_parser("audit", help="量这份 pptx 是否符合设计规则（不花 token）")
     a.add_argument("pptx")

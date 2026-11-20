@@ -10,6 +10,9 @@ that way — it is the part that must never be wrong.
 
 from __future__ import annotations
 
+import contextlib
+import io
+
 import io
 import tempfile
 from dataclasses import dataclass, field
@@ -170,7 +173,10 @@ def _pdf_pages(path: Path) -> tuple[str, list[Table]]:
     tables: list[Table] = []
 
     try:
-        import fitz  # PyMuPDF
+        try:
+            import pymupdf as fitz  # PyMuPDF 1.24+
+        except ImportError:  # pragma: no cover - older wheels
+            import fitz
 
         with fitz.open(str(path)) as doc:
             for pno, page in enumerate(doc, 1):
@@ -178,7 +184,10 @@ def _pdf_pages(path: Path) -> tuple[str, list[Table]]:
                 if text:
                     pages.append(f"--- 第 {pno} 页 ---\n{text}")
                 try:
-                    found = page.find_tables()
+                    # PyMuPDF prints advice to stdout on first use, which would
+                    # land in the middle of `deck plan`'s JSON. Keep the channel clean.
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        found = page.find_tables()
                 except Exception:  # noqa: BLE001
                     continue
                 for tno, tbl in enumerate(getattr(found, "tables", []), 1):

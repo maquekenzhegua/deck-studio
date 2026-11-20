@@ -241,7 +241,10 @@ def pdf_pages(path: Path, pics: list[Picture], out_dir: Path, *, dpi: int = 110,
     """Render pages only when the PDF gave us little text (a scanned deck)."""
     added = 0
     try:
-        import fitz
+        try:
+            import pymupdf as fitz
+        except ImportError:  # pragma: no cover
+            import fitz
 
         with fitz.open(path) as doc:
             for i, page in enumerate(doc, 1):
