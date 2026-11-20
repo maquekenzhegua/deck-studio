@@ -29,7 +29,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app import paths, settings  # noqa: E402
-from deck import agent, compose, compute, edit, ingest, multimodal, render2, review as reviewmod, verify  # noqa: E402
+from deck import (agent, compose, compute, edit, ingest, multimodal, readiness,  # noqa: E402
+                  render2, review as reviewmod, verify)
 from deck.llm import Client, LLMError  # noqa: E402
 from deck.plan import LAYOUTS, Plan, Slide  # noqa: E402
 from deck.visual import THEMES  # noqa: E402
@@ -188,6 +189,16 @@ def reload_bundle(use_model: bool = False) -> None:
         STATE["qa"] = None
 
 
+def readiness_now() -> dict:
+    with LOCK:
+        bundle, facts = STATE["bundle"], STATE["facts"]
+    try:
+        return readiness.audit(bundle, facts).as_dict()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[deck] readiness skipped: {exc}", file=sys.stderr)
+        return {}
+
+
 def review_now() -> dict:
     """The outline, read the way an editor would read it."""
     plan = STATE["plan"]
@@ -232,6 +243,7 @@ def snapshot() -> dict:
             ],
             "qa": STATE["qa"],
             "review": review_now(),
+            "readiness": readiness_now(),
             "planner": STATE.get("planner"),
             "settings": settings.public(),
             "meta": list(getattr(bundle, "meta", {}) or {}) if bundle else [],
@@ -362,6 +374,22 @@ def create_app() -> FastAPI:
         reload_bundle()
         return snapshot()
 
+    @app.post("/api/ideas")
+    def ideas():
+        with LOCK:
+            bundle, facts = STATE["bundle"], STATE["facts"]
+        if bundle is None or not facts:
+            raise HTTPException(409, "先传一份有数据的材料")
+        client = client_for_model()
+        if client is None:
+            raise HTTPException(409, "先在「模型」里填一个端点，模型才能提出自己的角度")
+        try:
+            return {"ideas": agent.pitch(bundle, facts, client=client)}
+        except LLMError as exc:
+            raise HTTPException(502, f"模型没有回话：{str(exc)[:120]}")
+        except ValueError as exc:
+            raise HTTPException(502, str(exc))
+
     @app.post("/api/plan")
     def replan(body: PlanBody):
         with LOCK:
@@ -380,7 +408,7 @@ def create_app() -> FastAPI:
             STATE["planner"] = {"who": result.planner, "model": result.model,
                                 "label": result.summary(), "log": result.log}
         return {"plan": plan_json(plan), "planner": STATE["planner"],
-                "review": review_now()}
+                "review": review_now(), "readiness": readiness_now()}
 
     @app.post("/api/build")
     def build(body: BuildBody):
@@ -445,6 +473,7 @@ def create_app() -> FastAPI:
             "qa": qa,
             "previewError": preview_error,
             "review": review_now(),
+            "readiness": readiness_now(),
         }
 
     @app.get("/files/{path:path}")
@@ -519,7 +548,8 @@ def create_app() -> FastAPI:
                 if not findings:
                     return {"plan": asdict(plan), "message": "评审没有发现问题，不用改。",
                             "theme": STATE.get("theme"), "changed": False,
-                            "planner": STATE.get("planner"), "review": review_now()}
+                            "planner": STATE.get("planner"), "review": review_now(),
+                "readiness": readiness_now()}
                 text = reviewmod.as_prompt(findings)
             new_plan, message = edit.apply(plan, text)
             client = client_for_model()
@@ -539,7 +569,8 @@ def create_app() -> FastAPI:
             changed = len(new_plan.slides) != len(plan.slides) or new_plan != plan
         return {"plan": asdict(new_plan), "message": message,
                 "theme": STATE.get("theme"), "changed": bool(changed),
-                "planner": STATE.get("planner"), "review": review_now()}
+                "planner": STATE.get("planner"), "review": review_now(),
+                "readiness": readiness_now()}
 
     @app.post("/api/reveal")
     def reveal():

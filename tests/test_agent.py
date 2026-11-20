@@ -221,3 +221,35 @@ class SlowModelTest(unittest.TestCase):
         result = agent.plan(self.bundle, self.facts, client=fake)
         self.assertEqual(result.planner, "offline")
         self.assertTrue(any("模型不可用" in line for line in result.log))
+
+
+class PitchTest(unittest.TestCase):
+    """The model proposes angles before pages; junk must not reach the UI."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.bundle = ingest.load(DATA)
+        cls.facts = compute.extract(cls.bundle)
+
+    def test_three_readable_angles_come_back(self):
+        fake = Fake([{"ideas": [
+            {"title": "华东撑住了增长", "angle": "把增量归到一个区", "why": "f10 f12"},
+            {"title": "产品线在换挡", "angle": "老产品退、新硬件上", "why": "f2"},
+            {"title": "漏斗漏在方案", "angle": "先修中段", "why": "f16"},
+            {"title": "多出来的一条", "angle": "不该出现", "why": ""},
+        ]}])
+        ideas = agent.pitch(self.bundle, self.facts, client=fake, n=3)
+        self.assertEqual(len(ideas), 3)
+        self.assertEqual(ideas[0]["title"], "华东撑住了增长")
+        self.assertTrue(all(i["title"] and i["angle"] for i in ideas))
+
+    def test_angles_without_a_title_are_dropped(self):
+        fake = Fake([{"ideas": [{"angle": "只有角度", "why": ""},
+                                {"title": "有标题", "angle": "有角度", "why": ""}]}])
+        ideas = agent.pitch(self.bundle, self.facts, client=fake)
+        self.assertEqual([i["title"] for i in ideas], ["有标题"])
+
+    def test_an_empty_answer_is_an_error_not_an_empty_list(self):
+        fake = Fake([{"ideas": []}])
+        with self.assertRaises(ValueError):
+            agent.pitch(self.bundle, self.facts, client=fake)

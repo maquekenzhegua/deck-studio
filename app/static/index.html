@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deck Studio · 把资料变成一场汇报</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563EB'/%3E%3Ctext x='16' y='23' font-family='Segoe UI' font-size='19' font-weight='800' text-anchor='middle' fill='%23FFFFFF'%3ED%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="/static/theme-light.css?v=6">
+<link rel="stylesheet" href="/static/theme-light.css?v=9">
 </head>
 <body>
 <div class="app">
@@ -22,6 +22,7 @@
     </div>
     <div class="grow"></div>
     <div class="top-note"><span class="dot"></span><span id="engine">本地渲染 · 无需联网</span></div>
+    <button class="btn ghost" id="ideaBtn" title="让模型先提出三个叙事角度">提三个角度</button>
     <button class="btn ghost" id="setBtn" title="接入文本/视觉模型（可选）">模型</button>
     <button class="btn primary" id="buildBtn" disabled>生成演示 <span style="font-size:10px;opacity:.6">Ctrl ↵</span></button>
   </header>
@@ -148,6 +149,28 @@
   <div class="acts">
     <button class="btn tiny" id="reviewClose">知道了</button>
     <button class="btn tiny primary" id="reviewFix">让模型按意见改</button>
+  </div>
+</div>
+
+<div class="settings" id="ideaSheet" style="display:none">
+  <div class="sheet">
+    <div class="sheet-head">
+      <div>
+        <h3>三个角度</h3>
+        <p>同一个材料可以讲成不同的故事。选一个，模型按它重排整份大纲。</p>
+      </div>
+      <button class="btn tiny ghost" id="ideaClose">关闭</button>
+    </div>
+    <div class="ideas" id="ideaList"></div>
+  </div>
+</div>
+
+<div class="problems" id="readySheet" style="display:none">
+  <h5>资料体检</h5>
+  <p id="readySummary">先看材料能撑起哪些论证。</p>
+  <ul id="readyList"></ul>
+  <div class="acts">
+    <button class="btn tiny" id="readyClose">知道了</button>
   </div>
 </div>
 
@@ -288,11 +311,14 @@ function renderDeckHead(){
     <span class="chip"><b>${factsUsed.size}</b> 条引用</span>
     <span class="chip">${esc(tw?.name || S.theme)}</span>
     ${S.planner ? `<span class="chip ${S.planner.who === 'model' ? 'ok' : ''}" title="${esc((S.planner.log||[]).join(' · '))}">${esc(S.planner.label || '离线规划')}</span>` : ''}
+    ${S.readiness ? `<span class="chip ${S.readiness.score >= 4 ? 'ok' : 'warn'}" id="readyChip" title="点击看资料体检">${esc(S.readiness.summary)}</span>` : ''}
     ${S.review && S.review.findings.length ? `<span class="chip ${S.review.findings.some(f=>f.level==='block') ? 'warn' : ''}" id="revChip" title="点击看评审意见">评审 ${S.review.findings.length}</span>` : ''}
     ${S.qa ? `<span class="chip ${S.qa.score >= 90 ? 'ok' : 'warn'}" id="qaChip" title="点击看质量建议">质量 ${S.qa.score}</span>` : ''}
     ${S.pages.length ? `<span class="chip ok">已生成 · ${S.pages.length} 张预览</span>` : '<span class="chip">待生成</span>'}`;
   const revChip = $('#revChip');
   if(revChip) revChip.onclick = ()=>openReview();
+  const readyChip = $('#readyChip');
+  if(readyChip) readyChip.onclick = ()=>openReady();
   const qaChip = $('#qaChip');
   if(qaChip) qaChip.onclick = ()=>{
     const list = (S.qa.issues || []).slice(0, 3);
@@ -447,6 +473,7 @@ function apply(data){
   S.pictures = data.pictures || S.pictures;
   S.qa = data.qa || S.qa;
   S.review = data.review || S.review;
+  S.readiness = data.readiness || S.readiness;
   if(data.settings){ S.settings = data.settings; paintEngine(data.settings); }
   S.theme = data.theme || S.theme;
   if(data.planner) S.planner = data.planner;
@@ -520,6 +547,7 @@ async function build(force=false, replan=false){
     S.pages = data.pages; S.pptx = data.pptx; S.plan = data.plan || S.plan; S.theme = data.theme;
     S.qa = data.qa || S.qa;
     S.review = data.review || S.review;
+    S.readiness = data.readiness || S.readiness;
     renderDeckHead(); renderGrid(); setTab('preview'); renderTrail();
     $('#exportBtn').disabled = !S.pages.length;
     if(data.pages.length) toast(`已生成 <b>${S.pages.length}</b> 页`);
@@ -568,6 +596,17 @@ function openReview(){
 }
 $('#reviewClose').onclick = ()=>$('#reviewSheet').style.display='none';
 
+function openReady(){
+  const r = S.readiness;
+  if(!r) return;
+  $('#readySheet').style.display = 'block';
+  $('#readySummary').textContent = `${r.summary}：有 ${r.score} 项能直接支撑论证，${r.total - r.score} 项缺材料。`;
+  $('#readyList').innerHTML = (r.checks || []).map(c=>
+    `<li>${c.have ? '✓' : '×'} <b>${esc(c.label)}</b> · ${esc(c.detail || '')}</li>`
+  ).join('') + (r.suggestion ? `<li style="margin-top:8px"><b>建议</b> · ${esc(r.suggestion)}</li>` : '');
+}
+$('#readyClose').onclick = ()=>$('#readySheet').style.display='none';
+
 async function applyQuick(){
   const el = $('#quickIn');
   const text = el.value.trim();
@@ -612,7 +651,7 @@ function paintEngine(cfg){
   const el = $('#engine');
   if(!el) return;
   if(cfg && cfg.mode === 'model'){
-    const m = cfg.text.model || '模型';
+    const m = cfg.text.model || cfg.env_model || '模型';
     el.textContent = cfg.vision_on ? `已接 ${m} · 可读图` : `已接 ${m}`;
     el.style.color = 'var(--acid-dim)';
   }else{
@@ -699,6 +738,50 @@ async function saveSettings(){
 
 /* ------------------------------------------------------------ wiring */
 $('#setBtn').onclick = openSettings;
+
+async function openIdeas(){
+  if(!(S.facts && S.facts.length)) { toast('先传一份有数据的材料'); return; }
+  const sheet = $('#ideaSheet');
+  sheet.style.display = 'grid';
+  $('#ideaList').innerHTML = '<div class="idea-empty">模型正在读材料，可能需要半分钟…</div>';
+  busy(true, '模型在想角度', '它在读事实清单，找三种不同的讲法…');
+  try{
+    const res = await fetch('/api/ideas', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    const d = await res.json();
+    busy(false);
+    if(!res.ok){
+      $('#ideaList').innerHTML = `<div class="idea-empty">${esc(d.detail || '模型没有回话')}</div>`;
+      return;
+    }
+    $('#ideaList').innerHTML = d.ideas.map((it, i)=>`
+      <button class="idea" data-i="${i}">
+        <span class="idea-n">0${i+1}</span>
+        <b>${esc(it.title)}</b>
+        <em>${esc(it.angle)}</em>
+        <i>${esc(it.why)}</i>
+      </button>`).join('');
+    $('#ideaList').querySelectorAll('.idea').forEach(el=>{
+      el.onclick = ()=>pickIdea(d.ideas[+el.dataset.i]);
+    });
+  }catch(e){ busy(false); $('#ideaList').innerHTML = `<div class="idea-empty">${esc(e.message)}</div>`; }
+}
+
+async function pickIdea(idea){
+  $('#ideaSheet').style.display = 'none';
+  S.idea = idea;
+  if(S.plan) S.plan.deck_title = idea.title;
+  busy(true, '按这个角度重排', idea.title);
+  try{
+    const res = await fetch('/api/plan', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({deck_title: idea.title, subtitle: idea.why, brief: idea.angle})});
+    const d = await res.json();
+    if(!res.ok){ busy(false); toast(d.detail || '重排失败'); return; }
+    apply(d); busy(false); toast('按这个角度排好了');
+    await build(false);
+  }catch(e){ busy(false); toast('重排失败：' + e.message); }
+}
+$('#ideaBtn').onclick = openIdeas;
+$('#ideaClose').onclick = ()=>{ $('#ideaSheet').style.display = 'none'; };
 $('#setClose').onclick = closeSettings;
 $('#setCancel').onclick = closeSettings;
 $('#setTest').onclick = testSettings;

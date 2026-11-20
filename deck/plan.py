@@ -86,6 +86,9 @@ USER_TMPL = """## 这份 deck 是什么
 ## 事实清单（你只能引用这些 id，不能写数字）
 {facts}
 
+## 材料覆盖度（监理给你的边界，别越界）
+{coverage}
+
 ## 可用的图片
 {pictures}
 
@@ -244,10 +247,29 @@ def make(
         outline=bundle.outline_block() or "",
         n=slides,
         body=body,
+        coverage=_coverage(bundle, facts),
     )
     data = client.json(SYSTEM, user, temperature=0.25, max_tokens=2600)
     return _validate(data, facts, bundle.pictures, deck_title,
                      (brief.get('decision').value if brief is not None else ask))
+
+
+def _coverage(bundle: Bundle, facts: list[Fact]) -> str:
+    """Tell the model which arguments the material can actually carry.
+
+    Without this the model happily writes a five-act strategy story on top of
+    one column of monthly revenue. Its plan is then either unsupported or
+    padded; both lose to a plan that knows what is missing.
+    """
+    try:
+        from .readiness import audit
+    except Exception:  # noqa: BLE001
+        return ""
+    rd = audit(bundle, facts)
+    gaps = [c.label for c in rd.checks if not c.have]
+    if not gaps:
+        return "- 材料覆盖：趋势 / 结构 / 同比 / 漏斗 / 图片 / 原话 都有。"
+    return "- 材料覆盖：缺少 " + "、".join(gaps) + "。不要为缺的材料编页；缺少的部分用一句话点明，不要造数。"
 
 
 def _norm(s: str) -> str:

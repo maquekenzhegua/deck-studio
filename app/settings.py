@@ -137,7 +137,12 @@ def mask(secret: str) -> str:
 
 def public(data: dict | None = None) -> dict:
     clean = _clean(data) if data is not None else load()
-    text_on = bool(clean["base_url"] and clean["model"])
+    # A deployment can configure the endpoint purely through the environment
+    # (Docker, CI, a shortcut with env vars). Reporting "offline" while the
+    # model is in fact driving would mislabel every deck it writes.
+    env_on = bool(os.environ.get("DECK_BASE_URL") and os.environ.get("DECK_MODEL")
+                  and os.environ.get("DECK_API_KEY"))
+    text_on = bool(clean["base_url"] and clean["model"]) or env_on
     # A vision model is a separate choice: pointing it at a text-only model
     # (DeepSeek, MiniMax) fails at the first image with a 404, so absence of an
     # explicit vision model means "off", not "reuse the text one".
@@ -158,6 +163,8 @@ def public(data: dict | None = None) -> dict:
             "has_key": bool(clean["vision_key"]),
         },
         "mode": "model" if text_on else "offline",
+        "source": "file" if (clean["base_url"] and clean["model"]) else ("env" if env_on else ""),
+        "env_model": os.environ.get("DECK_MODEL", ""),
         "vision_on": vision_on,
         "presets": [{"id": k, **v} for k, v in PRESETS.items()],
     }

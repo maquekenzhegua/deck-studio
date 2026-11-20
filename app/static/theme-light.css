@@ -324,3 +324,26 @@ aside.rail{
 
 @media(max-width:1320px){:root{--rail:312px}.stage{padding:20px 22px}.htitle{font-size:25px}}
 @media(max-width:1120px){:root{--rail:286px}.grid{grid-template-columns:1fr}.htitle{font-size:22px}}
+
+/* 三个角度：像三张提案卡，而不是三行文字 */
+.ideas{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;padding:4px 2px 8px}
+@media(max-width:860px){.ideas{grid-template-columns:1fr}}
+.idea{position:relative;display:flex;flex-direction:column;gap:8px;text-align:left;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 16px 14px;
+  cursor:pointer;transition:border-color .15s,transform .15s,box-shadow .15s;font:inherit;color:inherit}
+.idea:hover{border-color:var(--brand);transform:translateY(-2px);box-shadow:0 8px 22px rgba(37,99,235,.12)}
+.idea .idea-n{font:600 11px/1 var(--mono,ui-monospace);color:var(--brand);letter-spacing:.08em}
+.idea b{font-size:17px;line-height:1.35;color:var(--ink);font-weight:650}
+.idea em{font-style:normal;font-size:13px;line-height:1.6;color:var(--ink-2)}
+.idea i{font-style:normal;font-size:12px;line-height:1.55;color:var(--muted);
+  border-top:1px solid var(--line);padding-top:8px;margin-top:auto}
+.idea-empty{grid-column:1/-1;padding:28px 8px;text-align:center;color:var(--muted);font-size:13px}
+
+/* 角度提案要读得下三句话，别挤成名片 */
+#ideaSheet .sheet{width:min(940px,100%)}
+#ideaSheet .ideas{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+#ideaSheet .idea b{font-size:16.5px}
+#ideaSheet .idea em{font-size:12.5px}
+
+#ideaSheet .sheet-head{align-items:flex-start}
+#ideaSheet .sheet-head .btn{margin-left:auto;flex:0 0 auto}

@@ -210,6 +210,65 @@ def revise(current: Plan, facts: list[Fact], text: str, *, client: Client,
     return revised, f"模型改稿：{len(current.slides)} → {len(revised.slides)} 页"
 
 
+PITCH_SYSTEM = """你是一位汇报策划，先不写页面，只提出角度。
+
+给你一份材料和它已算出的事实。请提出 3 个**不同**的叙事角度：每个角度回答「这份材料到底想说什么」，
+并说明它靠哪几条事实站得住。不要写数字，引用事实时用 id（如 f7）。不要复述用户的措辞。
+
+返回 JSON：
+{"ideas": [
+  {"title": "不超过 18 字，一句判断", "angle": "这个角度怎么讲，两句话", "why": "靠哪几条事实站得住，一句话"}
+]}
+"""
+
+
+def _num(v) -> str:
+    """Facts carry either a float or an already-formatted string."""
+    try:
+        return f"{float(v):.4g}"
+    except (TypeError, ValueError):
+        return str(v)
+
+
+def pitch(bundle: Bundle, facts: list[Fact], *, client: Client, n: int = 3) -> list[dict]:
+    """Ask the model what this material is *about*, before asking for pages.
+
+    Planning directly into slides makes the model commit to a structure on its
+    first guess. Asking for angles first is the difference between an assistant
+    that drafts and one that has a view — and the user gets to pick the view.
+    """
+    if not facts:
+        raise ValueError("没有可引用的事实")
+    rows = []
+    for f in facts[:18]:
+        head = f.label
+        if f.points:
+            head += "：" + "、".join(f"{k} {_num(v)}" for k, v in list(f.points)[:4])
+        elif f.unit == "ratio":
+            head += f"：{_num(f.value)}"
+        else:
+            head += f"：{_num(f.value)} {f.unit}"
+        rows.append(f"- {f.id} [{f.kind}] {head}")
+    user = (
+        "## 材料\n" + (bundle.outline_block() or "（只有表格）")[:1800] +
+        "\n\n## 事实\n" + "\n".join(rows) +
+        f"\n\n请给 {n} 个角度。"
+    )
+    data = client.json(PITCH_SYSTEM, user, temperature=0.55, max_tokens=900)
+    ideas = []
+    for item in (data.get("ideas") or []):
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        angle = str(item.get("angle") or "").strip()
+        why = str(item.get("why") or "").strip()
+        if title and angle:
+            ideas.append({"title": title[:40], "angle": angle[:160], "why": why[:120]})
+    if not ideas:
+        raise ValueError("模型没有给出可用的角度")
+    return ideas[:n]
+
+
 def _layouts() -> list[str]:
     from .plan import LAYOUTS
     return sorted(LAYOUTS)
