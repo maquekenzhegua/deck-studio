@@ -395,9 +395,25 @@ def extract(bundle: Bundle) -> list[Fact]:
                 idx -= 1
 
     # One fact per (kind, source column): a wide sheet must not flood the deck.
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple] = set()
+    numbers: set[tuple] = set()
     deduped = []
     for f in sorted(facts, key=lambda x: -x.score):
+        # The same numbers arriving twice (a sheet and a chart of that sheet,
+        # an appendix repeating the summary) should read as one fact. Two
+        # different files that genuinely agree are still one claim.
+        def num(x):
+            try:
+                return round(float(x), 3)
+            except (TypeError, ValueError):
+                return str(x)
+
+        sig = (f.kind, f.column or "", f.label if f.kind == "breakdown" else "",
+               num(f.value), num(f.change), num(f.number),
+               tuple((str(k), num(v)) for k, v in f.points))
+        if sig in numbers:
+            continue
+        numbers.add(sig)
         # A breakdown is identified by the dimension it breaks down by, not by
         # the value column: "revenue by quarter" and "revenue by channel" are
         # different facts that share a column.

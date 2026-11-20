@@ -231,3 +231,27 @@ class TestQuantifiers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class DuplicateFactTest(unittest.TestCase):
+    """The same numbers twice is one claim, not two pages."""
+
+    def test_identical_tables_do_not_double_the_facts(self) -> None:
+        import pandas as pd
+
+        from deck import compute
+        from deck.ingest import Bundle, Table
+
+        frame = pd.DataFrame({"区域": ["华东", "华南", "华北"], "销售额": [977, 654, 509]})
+        bundle = Bundle(
+            tables=[Table("主表", frame, "a.xlsx", "Sheet1"),
+                    Table("附表", frame.copy(), "b.xlsx", "Sheet1")],
+            docs=[], pictures=[], outlines=[], skipped=[],
+        )
+        facts = compute.extract(bundle)
+        labels = [f.label for f in facts]
+        self.assertEqual(labels.count("销售额 按 区域"), 1, labels)
+        self.assertEqual(labels.count("销售额"), 1, labels)
+
+
+if __name__ == "__main__":
+    unittest.main()
