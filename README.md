@@ -1,10 +1,14 @@
 # Deck Studio
 
+[![tests](https://github.com/maquekenzhegua/deck-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/maquekenzhegua/deck-studio/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/maquekenzhegua/deck-studio)](https://github.com/maquekenzhegua/deck-studio/releases/latest)
+[![license](https://img.shields.io/badge/license-MIT-2563EB)](LICENSE)
+
 把一堆工作文件（Excel、Word、PDF、旧 PPT、截图、照片）变成一份**不会说谎、也拿得出手**的汇报 PPT。
 
 不是一个套模板的「一键生成」。它先把你手上的材料读懂、算清楚，再按一套从 19 份真实 deck（1144 页）里量出来的设计规范排版；模型可以主导论证，但**任何一个数字都必须能指回原始表格**。
 
-> **下载即用**：[Deck Studio 0.2.0 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
+> **下载即用**：[Deck Studio 0.3.0 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
 
 ![Deck Studio](docs/app-window.png)
 
