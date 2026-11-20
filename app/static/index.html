@@ -773,7 +773,8 @@ async function pickIdea(idea){
   busy(true, '按这个角度重排', idea.title);
   try{
     const res = await fetch('/api/plan', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({deck_title: idea.title, subtitle: idea.why, brief: idea.angle})});
+      body: JSON.stringify({deck_title: idea.title, subtitle: "",
+                            brief: `${idea.angle} ${idea.why}`})});
     const d = await res.json();
     if(!res.ok){ busy(false); toast(d.detail || '重排失败'); return; }
     apply(d); busy(false); toast('按这个角度排好了');

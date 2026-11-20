@@ -23,6 +23,7 @@ check, so it has to be produced by counting what actually happened.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from . import compose, review as reviewmod, verify
@@ -101,6 +102,11 @@ def plan(bundle: Bundle, facts: list[Fact], ask: str = "", *, slides: int = 0,
         return AgentResult(plan=compose.draft_text(bundle), planner="offline",
                            log=["没有数据表，按文档出稿"])
 
+    # A subtitle that talks about fact ids is planning scaffolding, not a
+    # sentence a room should read. It arrives that way when the UI passes an
+    # idea's justification straight through; drop it and let the model write.
+    if subtitle and re.search(r"\bf\d+\b", subtitle):
+        subtitle = ""
     fallback = compose.draft(bundle, facts, deck_title=deck_title, subtitle=subtitle)
     if client is None:
         return AgentResult(plan=fallback, planner="offline", log=["未配置模型，使用离线规划"])

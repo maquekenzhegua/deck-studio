@@ -188,6 +188,27 @@ def _wrap_clauses(text: str, width, size_pt: float) -> str:
     return "\n".join(out)
 
 
+def _top_note(f: Fact) -> str:
+    """A top name alone is trivia; a top name with its share is a finding."""
+    if not f.top:
+        return ""
+    vals = dict(f.points or [])
+    total = sum(abs(v) for v in vals.values()) or 0.0
+    share = abs(vals.get(f.top, 0.0)) / total if total else 0.0
+    return f"最高 {f.top} · {share:.0%}" if 0 < share < 0.95 else f"最高 {f.top}"
+
+
+def _label_unit(f: Fact) -> str:
+    """「销售额 · 区域（元）」reads; 「销售额 · 区域 · 元」is a parts list."""
+    unit = _unit(f)
+    if not unit:
+        return f.label
+    # 「客单价（均值）（元）」is two brackets in a row; fold the unit inside.
+    if f.label.endswith("）"):
+        return f"{f.label[:-1]} · {unit}）"
+    return f"{f.label}（{unit}）"
+
+
 def _value(v: float, unit: str | None) -> str:
     if unit == "ratio":
         return f"{v * 100:.1f}%"
@@ -272,7 +293,7 @@ def cover(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                      color=_rgb(theme.dark_ink), bold=True, font="headline",
                      spacing=-0.8, wrap=False)
             add_text(slide, x, Inches(5.98), width - Inches(0.30), Inches(0.26),
-                     f"{f.label} · {_unit(f)}", theme, size=Pt(9.5),
+                     _label_unit(f), theme, size=Pt(9.5),
                      color=_rgb(theme.dark_muted), spacing=0.8)
 
     add_rect(slide, MARGIN_X, Inches(6.54), CONTENT_W, Emu(6350),
@@ -523,7 +544,7 @@ def kpi(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
         rule = _rgb(theme.accent if i == 0 else theme.hair)
         add_rect(slide, x, Inches(1.84), width, Emu(28575), rule)
         add_text(slide, x, Inches(2.02), width - Inches(0.20), Inches(0.24),
-                 f"{f.label} · {_unit(f)}", theme, size=Pt(10.5),
+                 _label_unit(f), theme, size=Pt(10.5),
                  color=_rgb(theme.muted), bold=True, spacing=1.6)
         number = f.number or f.value
         size = _num_fit(number, width - Inches(0.12), 78, 40)
@@ -535,7 +556,7 @@ def kpi(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                      f"同比 {fmt.signed_pct(f.change)}", theme, size=Pt(12),
                      color=_rgb(theme.negative if f.change < 0 else theme.accent),
                      bold=True)
-        foot = f"最高 {f.top}" if f.top else ""
+        foot = _top_note(f)
         if foot:
             add_text(slide, x, Inches(3.98), width, Inches(0.30),
                      foot, theme, size=Pt(10.5), color=_rgb(theme.muted))
@@ -727,13 +748,22 @@ def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     # six-row table from pushing its own reading band over the source line.
     row_h = Inches(min(0.82, max(0.46, (5.30 - 2.18) / max(len(pts), 1))))
     header_h = Inches(0.38)
-    col_rank, col_name, col_bar = 0.45, 2.30, 5.85
+    # A second measure turns "东北客户数第一" into "客户数第一、销售额第五":
+    # the claim on the slide becomes checkable on the same slide.
+    extra = facts.get(ids[1]) if len(ids) > 1 else None
+    if extra is not None:
+        names = {k for k, _ in f.points}
+        if not extra.points or any(k not in names for k, _ in extra.points):
+            extra = None
+    col_rank, col_name, col_bar = 0.45, 2.05, 4.55
     # A conversion column only means something when the rows are stages of one
     # funnel. On a ranked breakdown it turns "second biggest / biggest" into a
     # fake 96% and invites the reader to read a story that is not there.
     funnel = (f.chart == "funnel")
     col_conv = 0.95 if funnel else 0.0
     col_val, col_gap = 1.30, 0.26
+    col_extra = 1.32 if extra is not None else 0.0
+    val_x = x0 + Inches(w / PX - col_val - col_extra - (0.16 if extra is not None else 0))
 
     def cell(x, top, width, text, *, size=13, color=None, bold=False, align="left"):
         add_text(slide, x, top, width, Inches(0.30), text, theme, size=Pt(size),
@@ -753,9 +783,16 @@ def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
         add_text(slide, conv_x, y, Inches(col_conv),
                  header_h, "转化", theme, size=Pt(9), color=_rgb(theme.muted),
                  bold=True, align="right", spacing=1.2)
-    add_text(slide, x0 + Inches(w / PX - col_val), y, Inches(col_val), header_h,
-             "数值", theme, size=Pt(9), color=_rgb(theme.muted), bold=True,
+    # "数值" beside "客户数" is a riddle; name the measure the bars encode.
+    vhead = ((f.column or f.label) or "").split("按")[0].strip() or "数值"
+    add_text(slide, val_x, y, Inches(col_val), header_h,
+             vhead[:6], theme, size=Pt(9), color=_rgb(theme.muted), bold=True,
              align="right", spacing=1.2)
+    if extra is not None:
+        head2 = ((extra.column or extra.label) or "").split("按")[0].strip() or "另一项"
+        add_text(slide, x0 + Inches(w / PX - col_extra), y, Inches(col_extra),
+                 header_h, head2[:6], theme, size=Pt(9), color=_rgb(theme.muted),
+                 bold=True, align="right", spacing=1.2)
 
     y += header_h
     add_rect(slide, x0, y, w, Emu(12700), _rgb(theme.ink))
@@ -765,7 +802,7 @@ def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     # Let the bars run all the way to the conversion column: a funnel that only
     # fills 60% of its track reads as timid.
     bar_w = (conv_x - bar_x - Inches(0.45)) if funnel else \
-        (x0 + Inches(w / PX - col_val - col_gap) - bar_x - Inches(0.45))
+        (val_x - Inches(col_gap) - bar_x - Inches(0.30))
     has_neg = any(v < 0 for _, v in pts)
 
     for i, (name, v) in enumerate(pts, 1):
@@ -794,10 +831,16 @@ def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
             add_text(slide, conv_x, top - Inches(0.03),
                      Inches(col_conv), Inches(0.30), conv, theme, size=Pt(11),
                      color=_rgb(theme.muted), align="right")
-        add_text(slide, x0 + Inches(w / PX - col_val), top - Inches(0.03),
+        add_text(slide, val_x, top - Inches(0.03),
                  Inches(col_val), Inches(0.30), _value(v, f.unit),
                  theme, size=Pt(15), color=_rgb(theme.ink if i == 1 else theme.ink2),
                  bold=(i == 1), align="right")
+        if extra is not None:
+            v2 = dict(extra.points).get(name)
+            add_text(slide, x0 + Inches(w / PX - col_extra), top - Inches(0.03),
+                     Inches(col_extra), Inches(0.30),
+                     _value(v2, extra.unit) if v2 is not None else "—",
+                     theme, size=Pt(13), color=_rgb(theme.ink2), align="right")
         y += row_h
         add_rect(slide, x0, y, w, Emu(6350), _rgb(theme.hair))
 

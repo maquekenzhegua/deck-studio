@@ -66,3 +66,40 @@ class RenderTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+DATA = Path(__file__).resolve().parent.parent / "samples" / "data"
+
+
+class TwoMeasureTableTest(unittest.TestCase):
+    """A comparison claim needs both numbers on the page."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from deck import ingest, compute
+        cls.bundle = ingest.load(DATA)
+        cls.facts = compute.extract(cls.bundle)
+
+    def test_second_fact_becomes_a_column(self):
+        import tempfile
+        from pathlib import Path
+        from deck.plan import Plan, Slide
+        from pptx import Presentation
+        money = next(f for f in self.facts if f.unit == "money" and len(f.points) >= 4)
+        count = next(f for f in self.facts if f.unit == "count" and len(f.points) >= 4
+                     and {k for k, _ in f.points} == {k for k, _ in money.points})
+        plan = Plan(deck_title="d", subtitle="", slides=[
+            Slide(layout="table", title="两边一起看", fact=f"{money.id},{count.id}"),
+            Slide(layout="closing", title="收尾", bullets=["一", "二"]),
+        ])
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "d.pptx"
+            from deck import render2
+            render2.build(plan, self.facts, {}, out, theme="editorial")
+            prs = Presentation(str(out))
+            text = "\n".join(sh.text_frame.text for sl in prs.slides
+                             for sh in sl.shapes if sh.has_text_frame)
+        vhead = (money.column or money.label).split("按")[0].strip()[:6]
+        self.assertIn(vhead, text)
+        head = (count.column or count.label).split("按")[0].strip()[:6]
+        self.assertIn(head, text)

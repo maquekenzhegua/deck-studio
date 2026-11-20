@@ -280,3 +280,24 @@ class SelfReviewTest(unittest.TestCase):
         result = agent.plan(self.bundle, self.facts, client=fake)
         self.assertTrue(any("数字对不上" in line for line in result.log))
         self.assertEqual(result.plan.slides[1].title, "2024")
+
+
+class SubtitleTest(unittest.TestCase):
+    """Planning scaffolding must never reach a slide."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.bundle = ingest.load(DATA)
+        cls.facts = compute.extract(cls.bundle)
+
+    def test_a_subtitle_that_names_facts_is_dropped(self):
+        fake = Fake([outline()])
+        result = agent.plan(self.bundle, self.facts, client=fake,
+                            subtitle="靠 f13、f15、f17 三条事实咬合站得住")
+        self.assertNotIn("f13", result.plan.subtitle or "")
+
+    def test_a_real_subtitle_survives(self):
+        fake = Fake([outline()])
+        result = agent.plan(self.bundle, self.facts, client=fake,
+                            subtitle="2026 年经营复盘")
+        self.assertEqual(result.plan.subtitle, "2026 年经营复盘")

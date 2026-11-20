@@ -57,3 +57,27 @@ class ReviewTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FactReuseTest(unittest.TestCase):
+    """One fact can carry a page; it cannot carry the deck."""
+
+    def test_three_pages_on_one_fact_raise_a_warning(self):
+        from deck.plan import Plan, Slide
+        p = Plan(deck_title="d", subtitle="", slides=[
+            Slide(layout="chart", title="一", fact="f1"),
+            Slide(layout="kpi_row", title="二", fact="f1"),
+            Slide(layout="table", title="三", fact="f1"),
+        ])
+        findings = review.review(p, [])
+        self.assertTrue(any("f1" in f.text and f.level == "warn" for f in findings))
+
+    def test_two_pages_on_one_fact_are_fine(self):
+        from deck.plan import Plan, Slide
+        p = Plan(deck_title="d", subtitle="", slides=[
+            Slide(layout="chart", title="一", fact="f1"),
+            Slide(layout="chart", title="二", fact="f2"),
+            Slide(layout="table", title="三", fact="f1"),
+        ])
+        findings = review.review(p, [])
+        self.assertFalse(any("已经出现在" in f.text for f in findings))

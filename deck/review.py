@@ -77,6 +77,27 @@ def _fact_slides(slides: list[Slide], facts: list[Fact]) -> list[Finding]:
     return out
 
 
+def _fact_reuse(slides: list[Slide]) -> list[Finding]:
+    """One fact can carry a page; it cannot carry the deck.
+
+    A model that binds region sales to a KPI, a bar chart and a screenshot of
+    the same chart has written three pages and said one thing. Two is the
+    limit: a headline number may legitimately return in the close.
+    """
+    seen: dict[str, list[int]] = {}
+    for i, s in enumerate(slides, 1):
+        for fid in [p for p in (s.fact or "").replace(" ", "").split(",") if p]:
+            seen.setdefault(fid, []).append(i)
+    out: list[Finding] = []
+    for fid, pages in seen.items():
+        if len(pages) > 2:
+            out.append(Finding(
+                "warn", pages[2],
+                f"{fid} 已经出现在第 {'、'.join(map(str, pages[:2]))} 页，"
+                f"这一页又用了同一条事实；换一条证据，或把两页并成一页。"))
+    return out
+
+
 def _bullets(slides: list[Slide]) -> list[Finding]:
     out: list[Finding] = []
     for i, s in enumerate(slides, 1):
@@ -126,6 +147,7 @@ def review(plan: Plan, facts: list[Fact]) -> list[Finding]:
             out.append(bad)
     out += _fact_slides(slides, facts)
     out += _duplicate_titles(slides)
+    out += _fact_reuse(slides)
     out += _layout_runs(slides)
     out += _bullets(slides)
     out += _shape(slides)
