@@ -22,8 +22,8 @@
     </div>
     <div class="grow"></div>
     <div class="top-note"><span class="dot"></span><span id="engine">本地渲染 · 无需联网</span></div>
+    <button class="btn ghost" id="autoBtn" title="从材料一路做到成片：找角度 → 排页序 → 写讲稿 → 排版">全自动</button>
     <button class="btn ghost" id="ideaBtn" title="让模型先提出三个叙事角度">提三个角度</button>
-    <button class="btn ghost" id="notesBtn" hidden title="让模型为每一页写一句上台要说的话">写讲稿</button>
     <button class="btn ghost" id="lookBtn" hidden title="让视觉模型看一遍已生成的页面，指出版式问题">看一眼</button>
     <button class="btn ghost" id="setBtn" title="接入文本/视觉模型（可选）">模型</button>
     <button class="btn ghost" id="notesBtn" hidden title="让模型给每页写一句讲稿（会写进 PPTX 的备注）">写讲稿</button>
@@ -865,6 +865,38 @@ async function pickIdea(idea){
   }catch(e){ busy(false); toast('重排失败：' + e.message); }
 }
 $('#ideaBtn').onclick = openIdeas;
+
+/* One click, the whole pipeline. The server runs it in a thread so the window
+   never freezes; the UI just narrates the steps back. */
+let autoTimer = null;
+function watchAuto(){
+  clearInterval(autoTimer);
+  autoTimer = setInterval(async ()=>{
+    let p = null;
+    try { p = await (await fetch('/api/progress')).json(); } catch(e) { return; }
+    $('#engine').textContent = '全自动 · ' + (p.step || '…');
+    if(p.running) return;
+    clearInterval(autoTimer);
+    const st = await (await fetch('/api/state')).json();
+    apply(st); paintEngine(st.settings);
+    $('#buildBtn').disabled = false;
+    if(p.error) toast('全自动停住了：' + p.error);
+    else toast('全自动完成：' + (st.pages || []).length + ' 页');
+  }, 900);
+}
+$('#autoBtn').onclick = async ()=>{
+  if(autoTimer) return;
+  $('#autoBtn').disabled = true;
+  $('#engine').textContent = '全自动 · 开始';
+  try {
+    const r = await fetch('/api/auto', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({theme:S.theme, slides:S.slidesWanted||0})});
+    if(!r.ok){ toast('启动失败：' + (await r.json()).detail); $('#autoBtn').disabled=false; return; }
+    watchAuto();
+  } finally {
+    setTimeout(()=>{ $('#autoBtn').disabled = false; }, 1200);
+  }
+};
 $('#ideaClose').onclick = ()=>{ $('#ideaSheet').style.display = 'none'; };
 $('#setClose').onclick = closeSettings;
 $('#setCancel').onclick = closeSettings;

@@ -216,3 +216,39 @@ class NotesRouteTest(unittest.TestCase):
             r = c.post("/api/notes")
         self.assertEqual(r.status_code, 409)
         self.assertIn("模型", r.json()["detail"])
+
+
+class AutoPipelineTest(unittest.TestCase):
+    """One click must end in a deck, not in a spinner.
+
+    The model is mocked out here: what is under test is the wiring, the order
+    of the steps, and the fact that a background thread reports progress
+    instead of leaving the UI waiting forever.
+    """
+
+    def test_auto_runs_to_a_plan_and_reports_steps(self):
+        import time
+        from app import server as srv
+        c = TestClient(srv.app)
+        c.post("/api/sample")
+        with mock.patch.object(srv, "client_for_model", return_value=None):
+            r = c.post("/api/auto", json={"theme": "editorial"})
+            self.assertEqual(r.status_code, 200)
+            for _ in range(120):
+                p = c.get("/api/progress").json()
+                if not p["running"]:
+                    break
+                time.sleep(0.25)
+        self.assertFalse(p["running"])
+        self.assertEqual(p["error"], "")
+        self.assertTrue(p["done"])
+        self.assertGreaterEqual(len(p["log"]), 3)
+        self.assertIn("在排版", " ".join(p["log"]))
+        st = c.get("/api/state").json()
+        self.assertGreaterEqual(len(st["plan"]["slides"]), 5)
+
+    def test_only_one_button_writes_notes(self):
+        root = Path(__file__).resolve().parent.parent
+        html = (root / "app" / "static" / "index.html").read_text(encoding="utf-8")
+        self.assertEqual(html.count('id="notesBtn"'), 1)
+        self.assertIn('id="autoBtn"', html)

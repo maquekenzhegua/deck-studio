@@ -54,6 +54,7 @@ STATE: dict[str, Any] = {
     "qa": None,
     "started": time.time(),
     "client": None,
+    "auto": {"running": False, "step": "", "log": [], "done": False, "error": ""},
 }
 PLAN_FILE = HOME / "plan.json"
 
@@ -331,6 +332,11 @@ class BuildBody(BaseModel):
     force: bool = False
 
 
+class AutoBody(BaseModel):
+    theme: str = ""
+    slides: int = 0
+
+
 class PlanBody(BaseModel):
     brief: str = ""
     deck_title: str = ""
@@ -572,6 +578,77 @@ def create_app() -> FastAPI:
             "review": review_now(),
             "readiness": readiness_now(),
         }
+
+    def _auto_note(step: str) -> None:
+        box = STATE["auto"]
+        box["step"] = step
+        box["log"].append(step)
+
+    def _auto_run(theme: str, slides: int) -> None:
+        """The whole pipeline, in the order a person would do it.
+
+        It uses the model where the model is good (deciding what to say) and
+        the renderer where the renderer is good (deciding where it goes).
+        Any failure is caught here: a background thread that dies silently
+        would leave the UI spinning forever.
+        """
+        box = STATE["auto"]
+        try:
+            with LOCK:
+                bundle, facts = STATE["bundle"], STATE["facts"]
+                pics = list(getattr(bundle, "pictures", []) or [])
+            if bundle is None:
+                raise ValueError("先上传资料")
+            client = client_for_model()
+            brief = ""
+            if client is not None:
+                _auto_note("模型在读材料，找三个可以讲的角度")
+                try:
+                    ideas = agent.pitch(bundle, facts, client=client)
+                    if ideas:
+                        brief = f"{ideas[0]['angle']} {ideas[0]['why']}".strip()
+                        box["log"].append(f"选了角度：{ideas[0]['title']}")
+                except (LLMError, ValueError) as exc:
+                    box["log"].append(f"提角度没成功，按材料本身排：{str(exc)[:80]}")
+            _auto_note("在排页序" + ("（模型）" if client is not None else "（离线规则）"))
+            result = agent.plan(bundle, facts, brief, slides=slides, client=client)
+            plan = result.plan
+            with LOCK:
+                STATE["plan"] = plan
+                STATE["planner"] = {"who": result.planner, "model": result.model,
+                                    "label": result.summary(), "log": result.log}
+            if client is not None:
+                _auto_note("在写讲稿")
+                got = agent.notes(plan, facts, client=client)
+                if got is not None:
+                    plan, msg = got
+                    with LOCK:
+                        STATE["plan"] = plan
+                    box["log"].append(msg)
+            _auto_note("在排版、导预览、算质量分")
+            theme2 = theme if theme in THEMES else STATE.get("theme") or "editorial"
+            build(BuildBody(plan=asdict(plan), theme=theme2, force=True))
+            box["done"] = True
+            _auto_note("好了")
+        except Exception as exc:  # noqa: BLE001 - surfaced to the UI, not swallowed
+            box["error"] = str(exc)[:200] or exc.__class__.__name__
+            box["log"].append("出错：" + box["error"])
+        finally:
+            box["running"] = False
+
+    @app.post("/api/auto")
+    def auto(body: AutoBody):
+        if STATE["auto"]["running"]:
+            raise HTTPException(409, "正在跑，等这一版出来")
+        with LOCK:
+            STATE["auto"] = {"running": True, "step": "开始", "log": [], "done": False, "error": ""}
+        th = threading.Thread(target=_auto_run, args=(body.theme, body.slides), daemon=True)
+        th.start()
+        return {"started": True}
+
+    @app.get("/api/progress")
+    def progress():
+        return STATE["auto"]
 
     @app.get("/files/{path:path}")
     def files(path: str):
