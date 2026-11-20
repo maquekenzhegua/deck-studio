@@ -293,8 +293,8 @@ def cover(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                      color=_rgb(theme.dark_ink), bold=True, font="headline",
                      spacing=-0.8, wrap=False)
             add_text(slide, x, Inches(5.98), width - Inches(0.30), Inches(0.26),
-                     _label_unit(f), theme, size=Pt(9.5),
-                     color=_rgb(theme.dark_muted), spacing=0.8)
+                     _label_unit(f), theme, size=Pt(10.5),
+                     color=_mix(theme.dark, theme.dark_ink, 0.78), spacing=0.8)
 
     add_rect(slide, MARGIN_X, Inches(6.54), CONTENT_W, Emu(6350),
              _mix(theme.dark, "#FFFFFF", 0.22))
