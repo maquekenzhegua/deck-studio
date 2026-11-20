@@ -8,7 +8,7 @@
 
 不是一个套模板的「一键生成」。它先把你手上的材料读懂、算清楚，再按一套从 19 份真实 deck（1144 页）里量出来的设计规范排版；模型可以主导论证，但**任何一个数字都必须能指回原始表格**。
 
-> **下载即用**：[Deck Studio 0.7.9 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
+> **下载即用**：[Deck Studio 0.8.0 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
 
 ![Deck Studio](docs/app-window.png)
 
@@ -91,6 +91,12 @@ python -m deck.cli audit  out/deck.pptx                # 设计规则体检
 界面会实时显示已等秒数；超时自动缩到 5 页重试一次，两次都超时才退回离线，并说明原因——
 不会让你对着一个转圈的空窗口等十分钟。
 
+**讲稿**：右上「写讲稿」让模型按每页论点写一句现场说的话（`POST /api/notes`），
+写进 PPTX 的演讲者备注——上场前不用重新组织语言。讲稿里不许出现数字：
+一句话里混进编造的百分比，比没有讲稿更糟，所以带数字的句子整条丢弃。
+
+![讲稿写进备注](docs/speaker-notes.png)
+
 「一句话改稿」也归模型管：配了模型时，它可以按「把结论提前、删掉表格、第 3 页换成对比」
 这类开放式指令重写大纲；没配模型时仍由规则编辑器处理「第三页删掉」「换成午夜」这些明确命令。
 两条路都过同一套校验——改稿里编出来的数字，整份改稿会被打回，而不是悄悄留下一页。
@@ -153,7 +159,7 @@ python tools/accept.py
 python -m unittest discover -s tests
 ```
 
-211 条离线测试：数字校验、离线规划、版式与图表、模型主导的降级路径、模型自查、多模态分类、PDF/Excel 原生图表、模板配色、QA 阈值、HTTP 接口、一句话改稿。
+217 条离线测试：数字校验、离线规划、版式与图表、模型主导的降级路径、模型自查、多模态分类、PDF/Excel 原生图表、模板配色、QA 阈值、HTTP 接口、一句话改稿。
 没有网络、没有模型、没有 Office 也能全绿。
 
 ## 目录

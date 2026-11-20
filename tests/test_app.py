@@ -203,3 +203,16 @@ class PreviewDensityTest(unittest.TestCase):
         self.assertIn("deck.cols", html)
         css = (root / "app" / "static" / "theme-light.css").read_text(encoding="utf-8")
         self.assertIn("var(--cols,2)", css)
+
+
+class NotesRouteTest(unittest.TestCase):
+    """No model configured is a 409 with a sentence a person can act on."""
+
+    def test_notes_need_a_model(self):
+        from app import server as srv
+        c = TestClient(srv.app)
+        c.post("/api/sample")
+        with mock.patch.object(srv, "client_for_model", return_value=None):
+            r = c.post("/api/notes")
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("模型", r.json()["detail"])

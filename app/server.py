@@ -464,6 +464,24 @@ def create_app() -> FastAPI:
         except ValueError as exc:
             raise HTTPException(502, str(exc))
 
+    @app.post("/api/notes")
+    def write_notes():
+        with LOCK:
+            plan, facts = STATE["plan"], STATE["facts"]
+        if plan is None or not plan.slides:
+            raise HTTPException(409, "先生成一版大纲")
+        client = client_for_model()
+        if client is None:
+            raise HTTPException(409, "先在「模型」里填一个端点，模型才能写讲稿")
+        got = agent.notes(plan, facts, client=client)
+        if got is None:
+            raise HTTPException(502, "模型这次没写出可用的讲稿，再试一次")
+        new_plan, message = got
+        with LOCK:
+            STATE["plan"] = new_plan
+        return {"plan": asdict(new_plan), "message": message,
+                "review": review_now(), "readiness": readiness_now()}
+
     @app.post("/api/plan")
     def replan(body: PlanBody):
         with LOCK:

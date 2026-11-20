@@ -11,7 +11,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from deck import agent, compute, ingest, verify
+from deck import agent, compose, compute, ingest, verify
 from deck.llm import LLMError
 
 DATA = Path(__file__).resolve().parent.parent / "samples" / "data"
@@ -323,3 +323,39 @@ class ChartShapeTest(unittest.TestCase):
         self.assertEqual(result.planner, "model")
         self.assertEqual(result.plan.slides[1].variant, "donut")
         self.assertTrue(any("占比环" in line for line in result.log))
+
+
+class NotesTest(unittest.TestCase):
+    """A spoken line is prose: it may not carry a figure, so digits are dropped."""
+
+    def setUp(self):
+        bundle = ingest.load(DATA)
+        self.facts = compute.extract(bundle)
+        self.plan = compose.draft(bundle, self.facts)
+
+    def test_clean_lines_land(self):
+        fake = Fake([{"notes": [
+            {"page": 1, "say": "先说结论：华东在涨，北方在退。"},
+            {"page": 2, "say": "再看支撑这个判断的三条证据。"},
+        ]}])
+        got = agent.notes(self.plan, self.facts, client=fake)
+        self.assertIsNotNone(got)
+        plan, message = got
+        self.assertIn("2", message)
+        self.assertTrue(plan.slides[0].script.startswith("先说结论"))
+
+    def test_a_line_with_a_figure_is_dropped(self):
+        fake = Fake([{"notes": [
+            {"page": 1, "say": "华东增长了 34 个百分点。"},
+            {"page": 2, "say": "这条没有数字，可以留下。"},
+        ]}])
+        plan, _ = agent.notes(self.plan, self.facts, client=fake)
+        self.assertEqual(plan.slides[0].script, "")
+        self.assertTrue(plan.slides[1].script)
+
+    def test_nothing_usable_returns_none(self):
+        fake = Fake([{"notes": [{"page": 1, "say": "增长 34%"}]}])
+        self.assertIsNone(agent.notes(self.plan, self.facts, client=fake))
+
+    def test_no_client_is_not_an_error(self):
+        self.assertIsNone(agent.notes(self.plan, self.facts, client=None))
