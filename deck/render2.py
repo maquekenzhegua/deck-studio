@@ -78,6 +78,22 @@ def _bg(slide, theme: Theme, dark: bool = False) -> None:
              _rgb(theme.dark if dark else theme.paper))
 
 
+def _num_fit(text: str, width, max_pt: float, min_pt: float) -> Pt:
+    """A figure that has to stay on one line.
+
+    `_fit` estimates width, and the estimate is a little optimistic for digits
+    plus a CJK unit: "2,502.1万" passed at 78pt and then the renderer broke the
+    line between the number and 万, dropping 万 onto the label. Standalone
+    figures are rendered with wrap off, so the only honest fix is to shrink
+    until the string actually fits.
+    """
+    size = Pt(max_pt)
+    limit = float(width) / 914400 * 72 * 0.98
+    while size.pt > min_pt and text_width_pt(text, size.pt) * 1.07 > limit:
+        size = Pt(size.pt - 1)
+    return size
+
+
 def _fit(text: str, width, height, max_pt: int, min_pt: int,
          line_spacing: float = 1.18) -> Pt:
     """Largest size at which the whole paragraph still fits the box."""
@@ -250,10 +266,11 @@ def cover(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
             x = MARGIN_X + Inches(i * 3.78)
             add_rect(slide, x, Inches(5.35), width, Emu(9525),
                      _mix(theme.dark, "#FFFFFF", 0.30))
+            figure = f.number or f.value
             add_text(slide, x, Inches(5.48), width, Inches(0.46),
-                     f.number or f.value, theme, size=Pt(25),
+                     figure, theme, size=_num_fit(figure, width - Inches(0.10), 25, 16),
                      color=_rgb(theme.dark_ink), bold=True, font="headline",
-                     spacing=-0.8)
+                     spacing=-0.8, wrap=False)
             add_text(slide, x, Inches(5.98), width - Inches(0.30), Inches(0.26),
                      f"{f.label} · {_unit(f)}", theme, size=Pt(9.5),
                      color=_rgb(theme.dark_muted), spacing=0.8)
@@ -503,9 +520,9 @@ def kpi(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                  f"{f.label} · {_unit(f)}", theme, size=Pt(10.5),
                  color=_rgb(theme.muted), bold=True, spacing=1.6)
         number = f.number or f.value
-        size = _fit(number, width, Inches(1.35), 78, 44, 1.0)
+        size = _num_fit(number, width - Inches(0.12), 78, 40)
         add_text(slide, x, Inches(2.34), width, Inches(1.38),
-                 number, theme, size=size, color=_rgb(theme.ink), bold=True,
+                 number, theme, size=size, color=_rgb(theme.ink), bold=True, wrap=False,
                  font="headline", line_spacing=1.0, spacing=-1.5)
         if f.change is not None:
             add_text(slide, x, Inches(3.74), width, Inches(0.28),

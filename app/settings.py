@@ -12,6 +12,8 @@ workspace and mirrors them into the environment for the rest of the process.
 
 from __future__ import annotations
 
+import re
+
 import json
 import os
 import urllib.error
@@ -67,10 +69,16 @@ def _clean(data: dict | None) -> dict[str, str]:
     for key in FIELDS:
         value = (data or {}).get(key, "")
         out[key] = str(value or "").strip()
-    # a bare host is a common paste; the client always appends /chat/completions
+    # A bare host is a common paste; the client always appends
+    # /chat/completions. Only add a version segment when the URL has none:
+    # 豆包 is /api/v3 and DashScope is /compatible-mode/v1, and appending a
+    # second version to either produces a 404 the user cannot diagnose.
     for key in ("base_url", "vision_url"):
-        if out[key] and not out[key].rstrip("/").endswith("/v1") and "v1" not in out[key]:
-            out[key] = out[key].rstrip("/") + "/v1"
+        url = out[key].rstrip("/")
+        if url and not re.search(r"/v\d+$", url):
+            out[key] = url + "/v1"
+        elif url:
+            out[key] = url
     return out
 
 

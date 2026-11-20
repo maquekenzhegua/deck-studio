@@ -67,3 +67,20 @@ class SettingsTest(unittest.TestCase):
         ok, message = settings.probe("https://api.openai.com/v1", "sk-x", "")
         self.assertFalse(ok)
         self.assertIn("模型", message)
+
+class BaseUrlTest(unittest.TestCase):
+    """Every domestic provider versions its path differently; do not guess twice."""
+
+    def test_a_bare_host_gets_v1(self):
+        self.assertEqual(settings._clean({"base_url": "https://api.deepseek.com"})["base_url"],
+                         "https://api.deepseek.com/v1")
+
+    def test_an_already_versioned_path_is_kept(self):
+        for url in ("https://ark.cn-beijing.volces.com/api/v3",
+                    "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    "http://127.0.0.1:11434/v1"):
+            self.assertEqual(settings._clean({"base_url": url})["base_url"], url)
+
+    def test_trailing_slash_is_dropped(self):
+        self.assertEqual(settings._clean({"base_url": "https://api.moonshot.cn/v1/"})["base_url"],
+                         "https://api.moonshot.cn/v1")

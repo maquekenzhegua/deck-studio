@@ -140,8 +140,13 @@ def client_for_model() -> Client | None:
     cfg = settings.load()
     if not (cfg["base_url"] and cfg["model"] and cfg["api_key"]):
         return None
+    # A planning call that retries four times with a three-minute socket
+    # timeout can hang the window for twelve minutes. Two attempts and a
+    # bounded socket keep the worst case inside what a person will wait for;
+    # past that the offline planner takes over and says so.
     try:
-        return Client(model=cfg["model"], base_url=cfg["base_url"], api_key=cfg["api_key"])
+        return Client(model=cfg["model"], base_url=cfg["base_url"], api_key=cfg["api_key"],
+                      timeout=int(os.environ.get("DECK_LLM_TIMEOUT") or 110), attempts=2)
     except (LLMError, Exception):  # noqa: BLE001 - a bad key must not break upload
         return None
 

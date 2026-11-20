@@ -197,3 +197,27 @@ class ReviseTest(unittest.TestCase):
         fake = Fake([])
         self.assertIsNone(agent.revise(self.base, self.facts, "   ", client=fake))
         self.assertEqual(fake.calls, [])
+
+class SlowModelTest(unittest.TestCase):
+    """A timeout should shrink the ask once, not give up on the model."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.bundle = ingest.load(DATA)
+        cls.facts = compute.extract(cls.bundle)
+
+    def test_a_timeout_retries_with_fewer_pages(self):
+        shorter = outline()
+        fake = Fake([LLMError("timed out"), shorter])
+        result = agent.plan(self.bundle, self.facts, client=fake)
+        self.assertEqual(len(fake.calls), 2)
+        # The retry must actually ask for less, or it is the same timeout again.
+        self.assertTrue(any("改为 6 页" in line for line in result.log))
+        self.assertTrue(result.plan.slides)
+        self.assertTrue(any("缩短篇幅" in line for line in result.log))
+
+    def test_two_timeouts_fall_back_and_say_so(self):
+        fake = Fake([LLMError("timed out"), LLMError("timed out again")])
+        result = agent.plan(self.bundle, self.facts, client=fake)
+        self.assertEqual(result.planner, "offline")
+        self.assertTrue(any("模型不可用" in line for line in result.log))

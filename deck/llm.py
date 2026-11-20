@@ -110,6 +110,11 @@ class Client:
 
     # -- chat --------------------------------------------------------------
     def chat(self, system: str, user: str, *, temperature: float = 0.2, max_tokens: int = 4096) -> str:
+        # A reasoning model spends completion tokens on thinking before it
+        # writes anything; a 2.6k budget can be consumed entirely by that and
+        # return finish_reason=length with an empty message. Start higher and
+        # grow on the empty retry instead of treating it as a broken endpoint.
+        max_tokens = max(int(max_tokens), int(os.environ.get("DECK_MAX_TOKENS") or 0), 4096)
         payload = {
             "model": self.model,
             "messages": [
@@ -136,7 +141,7 @@ class Client:
             self.usage.completion_tokens += int(u.get("completion_tokens") or 0)
             if msg.strip():
                 return msg
-            payload["max_tokens"] = min(int(payload["max_tokens"] * 1.6), 8000)
+            payload["max_tokens"] = min(int(payload["max_tokens"] * 1.8), 16000)
             time.sleep(1.0 + attempt)
         raise LLMError(f"{self.model} 连续 3 次返回空内容（finish_reason={data.get('choices', [{}])[0].get('finish_reason')}）")
 
