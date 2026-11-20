@@ -137,6 +137,27 @@ def _read_docx(path: Path) -> str:
 
 
 
+def _coerce_numbers(df: "pd.DataFrame") -> "pd.DataFrame":
+    """Turn a PDF table's string cells into numbers where they clearly are.
+
+    Excel hands us floats; a ruled PDF hands us "1,278" and "977". Without this
+    the table is readable but produces no facts, which is the difference between
+    "uploaded a report" and "got charts out of a report". Percentages are left
+    as text on purpose: whether "34%" means 34 or 0.34 depends on the column's
+    header, and guessing wrong is worse than not guessing.
+    """
+    import pandas as pd
+
+    out = df.copy()
+    for col in out.columns:
+        series = out[col].astype(str).str.strip()
+        cleaned = series.str.replace(r"[,\s]", "", regex=True)
+        numeric = pd.to_numeric(cleaned, errors="coerce")
+        if numeric.notna().mean() >= 0.8 and not series.str.contains("%").any():
+            out[col] = numeric
+    return out
+
+
 def _pdf_pages(path: Path) -> tuple[str, list[Table]]:
     """Text per page, plus tables when a table extractor is available.
 
@@ -171,7 +192,8 @@ def _pdf_pages(path: Path) -> tuple[str, list[Table]]:
                     if len(df.columns) < 2 or df.empty:
                         continue
                     tables.append(Table(name=f"{path.name} / 第{pno}页表{tno}",
-                                        df=df, source=str(path), sheet=f"p{pno}"))
+                                        df=_coerce_numbers(df), source=str(path),
+                                        sheet=f"p{pno}"))
         return "\n\n".join(pages), tables
     except ImportError:
         pass
