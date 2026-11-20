@@ -86,6 +86,26 @@ def _installed(family: str) -> bool:
     return ok
 
 
+def _serif_cjk() -> str:
+    """The heaviest serif CJK that actually resolves on this machine.
+
+    LibreOffice matches a font by its full name, so a single-weight install
+    ("Source Han Serif SC Heavy") is addressable even though the family name
+    alone is not. Fall back through Song faces before giving up on a sans.
+    """
+    win = Path("C:/Windows/Fonts")
+    for name, fname in (("Source Han Serif SC Heavy",
+                         "Source Han Serif SC Heavy (TrueType).ttf"),
+                        ("STSong", "STSONG.TTF"),
+                        ("SimSun", "simsun.ttc")):
+        if (win / fname).exists():
+            return name
+    return "Microsoft YaHei"
+
+
+SERIF_CJK = _serif_cjk()
+
+
 def _rgb(value: str) -> RGBColor:
     value = value.lstrip("#")
     return RGBColor(int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16))
@@ -148,7 +168,7 @@ THEMES: dict[str, Theme] = {
         paper="#FBF9F4", ink="#17140F", ink2="#4A4238", muted="#8A8174",
         hair="#DED6C8", soft="#F1EBDF", accent="#B4441F", accent2="#1F4E5F",
         dark="#171310", dark_ink="#FBF7EE", dark_muted="#B8AC99",
-        neg="#1F4E5F", headline_latin="Georgia", headline_cjk="Source Han Serif SC",
+        neg="#1F4E5F", headline_latin="Georgia", headline_cjk=SERIF_CJK,
         body_latin="Segoe UI", body_cjk="Noto Sans SC", serif_headline=True,
     ),
     # Near-black ink with a single electric blue. For tech / product decks.
@@ -326,9 +346,15 @@ def add_text(slide, left, top, width, height, text: str, theme: Theme, *,
     elif font == "headline":
         latin, cjk = theme.headline_latin, theme.headline_cjk
     elif font == "serif":
-        latin, cjk = "Georgia", "Source Han Serif SC"
+        latin, cjk = "Georgia", SERIF_CJK
     else:
         latin = cjk = font
+    if font in ("headline", "serif") and any(
+            "\u4e00" <= ch <= "\u9fff" for ch in str(text)):
+        # LibreOffice resolves CJK by the latin typeface on some builds, so a
+        # run that is mostly Chinese has to name the serif in both slots;
+        # otherwise the headline silently falls back to a sans face.
+        latin = cjk
     box = slide.shapes.add_textbox(left, top, width, height)
     tf = box.text_frame
     tf.word_wrap = wrap
