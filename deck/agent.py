@@ -105,13 +105,13 @@ def plan(bundle: Bundle, facts: list[Fact], ask: str = "", *, slides: int = 0,
     if client is None:
         return AgentResult(plan=fallback, planner="offline", log=["未配置模型，使用离线规划"])
 
-    want = slides or min(12, 6 + len(facts) // 4)
+    want = slides or min(7, 6 + len(facts) // 12)
     log: list[str] = []
     plan_model = None
     # A slow or reasoning-heavy model can run out of socket before it finishes
     # a twelve-page outline. Asking for fewer pages is the one retry that
     # changes the reason for the timeout, so it is worth one attempt.
-    for attempt, target in enumerate((want, min(6, want))):
+    for attempt, target in enumerate((want, min(5, want))):
         if attempt and target == want:
             break
         try:
@@ -123,8 +123,8 @@ def plan(bundle: Bundle, facts: list[Fact], ask: str = "", *, slides: int = 0,
             break
         except (LLMError, ValueError) as exc:
             log.append(f"模型不可用：{str(exc)[:120]}")
-            if attempt == 0 and want > 6:
-                log.append(f"改为 {min(6, want)} 页再试一次")
+            if attempt == 0 and want > 5:
+                log.append(f"改为 {min(5, want)} 页再试一次")
     if plan_model is None:
         return AgentResult(plan=fallback, planner="offline", model=client.model, log=log)
 

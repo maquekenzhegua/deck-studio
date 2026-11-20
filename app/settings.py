@@ -101,7 +101,15 @@ def save(data: dict, path: Path | None = None) -> dict[str, str]:
 
 
 def apply(data: dict | None = None) -> dict[str, str]:
-    """Mirror the file into the environment the rest of the code reads."""
+    """Mirror the file into the environment the rest of the code reads.
+
+    With explicit data (the UI saving a form) an empty field means "clear it".
+    Without data (startup, reading the file) an empty field must leave the
+    environment alone: DECK_* set by a deployment or CI is a legitimate
+    configuration, and wiping it at boot made env-only setups silently fall
+    back to offline planning.
+    """
+    explicit = data is not None
     clean = _clean(data) if data is not None else load()
     pairs = {
         "DECK_BASE_URL": clean["base_url"],
@@ -114,7 +122,7 @@ def apply(data: dict | None = None) -> dict[str, str]:
     for name, value in pairs.items():
         if value:
             os.environ[name] = value
-        elif name in os.environ:
+        elif explicit and name in os.environ:
             os.environ.pop(name, None)
     return clean
 

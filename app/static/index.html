@@ -475,10 +475,28 @@ async function loadSample(){
     await build(true);
   }catch(e){ busy(false); toast('示例加载失败：' + e.message); }
 }
-async function build(force=false){
+async function build(force=false, replan=false){
   if(!S.plan) return;
+  const modelOn = !!(S.settings && S.settings.text && S.settings.text.model);
   busy(true, force ? '忽略提醒，继续渲染' : '正在排版', '选版式、配色、画图表，再导出预览…');
   try{
+    if(replan && modelOn){
+      const t0 = Date.now();
+      const tick = setInterval(()=>{
+        const sec = Math.round((Date.now() - t0)/1000);
+        busy(true, '模型在排页序', `读完事实与图片，决定每页讲什么 · 已等 ${sec}s（慢模型 2–4 分钟，超时自动退回离线）`);
+      }, 1000);
+      busy(true, '模型在排页序', '读完事实与图片，决定每页讲什么；慢模型会在超时后缩短篇幅再试…');
+      let pr;
+      try{
+        pr = await fetch('/api/plan', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({deck_title:S.plan.deck_title || '', subtitle:S.plan.subtitle || '', brief:S.brief || ''})});
+      } finally { clearInterval(tick); }
+      if(pr.ok){
+        const pd = await pr.json();
+        if(pd.plan){ S.plan = pd.plan; S.planner = pd.planner; renderOutline(); renderDeckHead(); }
+      }
+    }
     const r = await fetch('/api/build', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({plan:S.plan, theme:S.theme, force})});
     const data = await r.json();
@@ -643,7 +661,7 @@ $('#pick').onclick = e=>{ e.stopPropagation(); $('#fileInput').click(); };
 $('#fileInput').onchange = e=>upload(e.target.files);
 $('#sampleBtn').onclick = e=>{ e.stopPropagation(); loadSample(); };
 $('#emptySample').onclick = loadSample;
-$('#buildBtn').onclick = ()=>build(false);
+$('#buildBtn').onclick = ()=>build(false, true);
 $('#quickGo').onclick = applyQuick;
 $('#quickIn').onkeydown = e=>{ if(e.key === 'Enter'){ e.preventDefault(); applyQuick(); } };
 $('#exportBtn').onclick = e=>{ e.stopPropagation(); $('#expMenu').classList.toggle('on'); };
@@ -659,7 +677,7 @@ $('#lightbox').onclick = e=>{ if(e.target.id === 'lightbox') $('#lightbox').clas
 $('#lbPrev').onclick = e=>{ e.stopPropagation(); stepLb(-1); };
 $('#lbNext').onclick = e=>{ e.stopPropagation(); stepLb(1); };
 document.addEventListener('keydown', e=>{
-  if((e.ctrlKey || e.metaKey) && e.key === 'Enter'){ e.preventDefault(); build(false); }
+  if((e.ctrlKey || e.metaKey) && e.key === 'Enter'){ e.preventDefault(); build(false, true); }
   if((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')){ e.preventDefault(); if(S.pages.length) exportDeck('desktop'); }
   if(e.key === 'Escape'){ $('#lightbox').classList.remove('on'); hideProblems(); closeSettings(); }
   if($('#lightbox').classList.contains('on')){

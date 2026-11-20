@@ -212,7 +212,7 @@ class SlowModelTest(unittest.TestCase):
         result = agent.plan(self.bundle, self.facts, client=fake)
         self.assertEqual(len(fake.calls), 2)
         # The retry must actually ask for less, or it is the same timeout again.
-        self.assertTrue(any("改为 6 页" in line for line in result.log))
+        self.assertTrue(any("改为 5 页" in line for line in result.log))
         self.assertTrue(result.plan.slides)
         self.assertTrue(any("缩短篇幅" in line for line in result.log))
 

@@ -138,25 +138,37 @@ def adopt_template(bundle) -> None:
 def client_for_model() -> Client | None:
     """A client only when the user actually configured one."""
     cfg = settings.load()
-    if not (cfg["base_url"] and cfg["model"] and cfg["api_key"]):
+    # The settings file is the UI's way in; DECK_* is the deployment's way in
+    # (CI, a shared machine, a container). The file wins when both exist, but
+    # an empty file must not shadow a perfectly good environment.
+    base = cfg["base_url"] or os.environ.get("DECK_BASE_URL", "")
+    model = cfg["model"] or os.environ.get("DECK_MODEL", "")
+    key = cfg["api_key"] or os.environ.get("DECK_API_KEY", "")
+    if not (base and model and key):
         return None
-    # A planning call that retries four times with a three-minute socket
-    # timeout can hang the window for twelve minutes. Two attempts and a
-    # bounded socket keep the worst case inside what a person will wait for;
-    # past that the offline planner takes over and says so.
+    # One bounded attempt per call: the endpoint runs at roughly 28 tokens a
+    # second here, so a six-page outline needs 90-130s. Retrying inside the
+    # client only doubles the wait without changing the reason for it; the
+    # planner's own "ask for fewer pages" retry is the useful one.
     try:
-        return Client(model=cfg["model"], base_url=cfg["base_url"], api_key=cfg["api_key"],
-                      timeout=int(os.environ.get("DECK_LLM_TIMEOUT") or 110), attempts=2)
+        return Client(model=model, base_url=base, api_key=key,
+                      timeout=int(os.environ.get("DECK_LLM_TIMEOUT") or 200), attempts=1)
     except (LLMError, Exception):  # noqa: BLE001 - a bad key must not break upload
         return None
 
 
-def reload_bundle() -> None:
+def reload_bundle(use_model: bool = False) -> None:
+    """Read the workspace and draft an outline.
+
+    Uploading must answer immediately: a model plan takes 30–150 seconds, and
+    making the file drop wait for it looks like a hang. So a reload drafts
+    offline; the explicit "生成" (`/api/plan`) is where the model takes over.
+    """
     bundle = ingest.load(UPLOADS)
     multimodal.augment(bundle, MEDIA, pages=True)
     adopt_template(bundle)
     facts = compute.extract(bundle)
-    result = agent.plan(bundle, facts, client=client_for_model())
+    result = agent.plan(bundle, facts, client=client_for_model() if use_model else None)
     with LOCK:
         STATE["bundle"] = bundle
         STATE["facts"] = facts
@@ -338,7 +350,7 @@ def create_app() -> FastAPI:
         if bundle is None:
             raise HTTPException(409, "先上传资料")
         text_model = settings.load()["model"] if settings.load()["base_url"] else ""
-        ask = body.brief or body.deck_title or ""
+        ask = body.brief or ""
         result = agent.plan(bundle, facts, ask, deck_title=body.deck_title or None,
                             subtitle=body.subtitle, client=client_for_model())
         plan = result.plan

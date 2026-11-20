@@ -427,7 +427,10 @@ def statement(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     add_rect(slide, Inches(7.12), Inches(0.92), Inches(5.59), Emu(38100), _rgb(theme.accent))
     if f:
         number = f.number or f.value
-        sub = f.value
+        # For a single fact the "sub" line used to repeat the hero number two
+        # inches below itself. The label is the explanation; the number is the
+        # number; printing both twice is noise.
+        sub = ""
         label = f.label
         extra = None
         if len(f.points) > 1:
@@ -485,9 +488,10 @@ def statement(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                      f"同比 {fmt.signed_pct(f.change)}", theme, size=Pt(12),
                      color=_rgb(theme.negative if f.change < 0 else theme.accent),
                      bold=True, align="center")
-        add_text(slide, Inches(7.45), Inches(5.32), Inches(4.95), Inches(0.9),
-                 sub, theme, size=Pt(12.5), color=_rgb(theme.muted),
-                 align="center", line_spacing=1.3)
+        if sub:
+            add_text(slide, Inches(7.45), Inches(5.32), Inches(4.95), Inches(0.9),
+                     sub, theme, size=Pt(12.5), color=_rgb(theme.muted),
+                     align="center", line_spacing=1.3)
     page_number(slide, idx, theme, total)
     footer_rule(slide, theme)
 
@@ -680,10 +684,18 @@ def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     w = CONTENT_W
     y = Inches(1.80)
     # four rows should breathe, eight rows should still fit above the reading
-    row_h = Inches(min(0.82, max(0.46, (5.86 - 1.80) / max(len(pts), 1))))
+    # Rows must stop where the reading band can still start: header at 1.80,
+    # band from ~5.60, source at 6.92. Reserving that space is what keeps a
+    # six-row table from pushing its own reading band over the source line.
+    row_h = Inches(min(0.82, max(0.46, (5.30 - 2.18) / max(len(pts), 1))))
     header_h = Inches(0.38)
     col_rank, col_name, col_bar = 0.45, 2.30, 5.85
-    col_conv, col_val, col_gap = 0.95, 1.30, 0.26
+    # A conversion column only means something when the rows are stages of one
+    # funnel. On a ranked breakdown it turns "second biggest / biggest" into a
+    # fake 96% and invites the reader to read a story that is not there.
+    funnel = (f.chart == "funnel")
+    col_conv = 0.95 if funnel else 0.0
+    col_val, col_gap = 1.30, 0.26
 
     def cell(x, top, width, text, *, size=13, color=None, bold=False, align="left"):
         add_text(slide, x, top, width, Inches(0.30), text, theme, size=Pt(size),
@@ -699,9 +711,10 @@ def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     add_text(slide, x0 + Inches(col_rank + col_name), y, Inches(col_bar), header_h,
              "分布", theme, size=Pt(9), color=_rgb(theme.muted), bold=True, spacing=1.2)
     conv_x = x0 + Inches(w / PX - col_val - col_gap - col_conv)
-    add_text(slide, conv_x, y, Inches(col_conv),
-             header_h, "转化", theme, size=Pt(9), color=_rgb(theme.muted),
-             bold=True, align="right", spacing=1.2)
+    if funnel:
+        add_text(slide, conv_x, y, Inches(col_conv),
+                 header_h, "转化", theme, size=Pt(9), color=_rgb(theme.muted),
+                 bold=True, align="right", spacing=1.2)
     add_text(slide, x0 + Inches(w / PX - col_val), y, Inches(col_val), header_h,
              "数值", theme, size=Pt(9), color=_rgb(theme.muted), bold=True,
              align="right", spacing=1.2)
@@ -713,7 +726,8 @@ def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     bar_x = x0 + Inches(col_rank + col_name)
     # Let the bars run all the way to the conversion column: a funnel that only
     # fills 60% of its track reads as timid.
-    bar_w = conv_x - bar_x - Inches(0.45)
+    bar_w = (conv_x - bar_x - Inches(0.45)) if funnel else \
+        (x0 + Inches(w / PX - col_val - col_gap) - bar_x - Inches(0.45))
     has_neg = any(v < 0 for _, v in pts)
 
     for i, (name, v) in enumerate(pts, 1):
@@ -737,13 +751,11 @@ def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
         bar_h = Inches(0.22)
         add_rect(slide, Emu(bx), int(top) + int((row_h - bar_h) / 2), Emu(int(length)),
                  bar_h, color)
-        if i > 1 and pts[i - 2][1]:
-            conv = f"{v / pts[i - 2][1] * 100:.0f}%"
-        else:
-            conv = "—"
-        add_text(slide, conv_x, top - Inches(0.03),
-                 Inches(col_conv), Inches(0.30), conv, theme, size=Pt(11),
-                 color=_rgb(theme.muted), align="right")
+        if funnel:
+            conv = f"{v / pts[i - 2][1] * 100:.0f}%" if i > 1 and pts[i - 2][1] else "—"
+            add_text(slide, conv_x, top - Inches(0.03),
+                     Inches(col_conv), Inches(0.30), conv, theme, size=Pt(11),
+                     color=_rgb(theme.muted), align="right")
         add_text(slide, x0 + Inches(w / PX - col_val), top - Inches(0.03),
                  Inches(col_val), Inches(0.30), _value(v, f.unit),
                  theme, size=Pt(15), color=_rgb(theme.ink if i == 1 else theme.ink2),
@@ -764,7 +776,9 @@ def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
         a, b, _ = max(drops, key=lambda t: t[2])
         reading = f"从{a}到{b}收窄最多，{pts[-1][0]}是最低一环。"
     if reading:
-        band_top = y + Inches(0.34)
+        band_top = y + Inches(0.30)
+        if float(band_top) > float(Inches(6.86)) - float(Inches(0.92)):
+            band_top = Inches(6.86) - Inches(0.92)
         add_rect(slide, x0, band_top, w, Inches(0.92), _rgb(theme.soft))
         add_rect(slide, x0, band_top, Emu(38100), Inches(0.92), _rgb(theme.accent))
         add_text(slide, Inches(0.92), band_top + Inches(0.16), Inches(1.2),
