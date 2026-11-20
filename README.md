@@ -8,7 +8,7 @@
 
 不是一个套模板的「一键生成」。它先把你手上的材料读懂、算清楚，再按一套从 19 份真实 deck（1144 页）里量出来的设计规范排版；模型可以主导论证，但**任何一个数字都必须能指回原始表格**。
 
-> **下载即用**：[Deck Studio 0.7.0 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
+> **下载即用**：[Deck Studio 0.7.1 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
 
 ![Deck Studio](docs/app-window.png)
 
