@@ -97,6 +97,80 @@ def analyse(path: str | Path) -> dict:
     return out
 
 
+def pptx_charts(path: Path) -> list[dict]:
+    """Read the numbers inside a deck's charts.
+
+    A previous year's deck is often the only place the numbers still exist.
+    """
+    return _charts_in(path, "ppt/charts/chart")
+
+
+def _sheet_values(wb, ref: str) -> list:
+    """Resolve `'数据'!$B$2:$B$4` against the workbook, in file order."""
+    from openpyxl.utils.cell import range_boundaries
+
+    if not ref:
+        return []
+    sheet, _, cells = ref.rpartition("!")
+    sheet = sheet.strip().strip("'")
+    cells = cells.replace("$", "")
+    if ":" not in cells:
+        cells = f"{cells}:{cells}"
+    try:
+        min_col, min_row, max_col, max_row = range_boundaries(cells)
+        ws = wb[sheet] if sheet else wb.active
+    except Exception:  # noqa: BLE001 - a broken reference is not a crash
+        return []
+    out: list = []
+    for row in ws.iter_rows(min_row=min_row, max_row=max_row,
+                            min_col=min_col, max_col=max_col, values_only=True):
+        out.append(row[0] if row else None)
+    return out
+
+
+def xlsx_charts(path: Path) -> list[dict]:
+    """Read the numbers inside a workbook's native charts.
+
+    A chart is often the only place a series was ever written down. Excel
+    keeps a cached copy of the values in the chart part; openpyxl and some
+    exporters do not, so when the cache is empty the cell reference beside it
+    is resolved against the workbook instead.
+    """
+    charts = _charts_in(path, "xl/charts/chart")
+    if not any(not c["vals"] for c in charts):
+        return charts
+    try:
+        from openpyxl import load_workbook
+
+        wb = load_workbook(path, data_only=True, read_only=True)
+    except Exception:  # noqa: BLE001
+        return charts
+    try:
+        for chart in charts:
+            if chart["vals"]:
+                continue
+            vals = [float(v) for v in _sheet_values(wb, chart.get("val_ref", ""))
+                    if isinstance(v, (int, float))]
+            cats = [str(c).strip() for c in _sheet_values(wb, chart.get("cat_ref", ""))
+                    if c is not None and str(c).strip()]
+            n = min(len(vals), len(cats)) if cats else len(vals)
+            if n < 2:
+                continue
+            chart["vals"] = vals[:n]
+            chart["cats"] = cats[:n] if cats else [str(i + 1) for i in range(n)]
+            if not chart.get("series") and chart.get("tx_ref"):
+                head = _sheet_values(wb, chart["tx_ref"])
+                if head and str(head[0] or "").strip():
+                    chart["series"] = str(head[0]).strip()
+    finally:
+        try:
+            wb.close()
+        except Exception:  # noqa: BLE001
+            pass
+    return charts
+    return out
+
+
 def caption(p: Picture) -> str:
     """A short, honest label. The vision pass may replace it with a sentence."""
     if p.kind == "page" and p.caption:
@@ -243,19 +317,19 @@ def pptx_theme(path: Path) -> dict:
 # --------------------------------------------------------------------------
 
 
-def pptx_charts(path: Path) -> list[dict]:
-    """Read the numbers inside a deck's charts.
+def _charts_in(path: Path, prefix: str) -> list[dict]:
+    """Read chart XML from any OOXML package (deck or workbook).
 
-    A previous year's deck is often the only place the numbers still exist.
-    Charts store their categories and values as XML, so they can be recovered
-    without a rendering engine or a model.
+    PowerPoint and Excel store charts with the same DrawingML chart part; only
+    the folder differs. Pulling the parser out means a workbook chart is not a
+    second implementation that can rot independently.
     """
     out: list[dict] = []
     ns = {"c": "http://schemas.openxmlformats.org/drawingml/2006/chart",
           "a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
     try:
         with zipfile.ZipFile(path) as z:
-            names = sorted(n for n in z.namelist() if n.startswith("ppt/charts/chart"))
+            names = sorted(n for n in z.namelist() if n.startswith(prefix))
             for name in names:
                 root = ET.fromstring(z.read(name))
                 title = ""
@@ -274,19 +348,36 @@ def pptx_charts(path: Path) -> list[dict]:
                     except ValueError:
                         vals.append(0.0)
                 series = ""
+                tx_ref = ""
                 ser = root.find(".//c:ser", ns)
                 if ser is not None:
                     sname = ser.find(".//c:tx//c:v", ns)
                     series = (sname.text or "").strip() if sname is not None else ""
+                    if not series:
+                        tref = ser.find(".//c:tx//c:f", ns)
+                        if tref is not None and tref.text:
+                            tx_ref = tref.text.strip()
+                cat_ref = ""
+                cref = root.find(".//c:cat//c:f", ns)
+                if cref is not None and cref.text:
+                    cat_ref = cref.text.strip()
+                val_ref = ""
+                vref = root.find(".//c:val//c:f", ns)
+                if vref is not None and vref.text:
+                    val_ref = vref.text.strip()
                 numfmt = root.find(".//c:numFmt", ns)
                 code = (numfmt.get("formatCode") if numfmt is not None else "") or ""
                 unit = "ratio" if "%" in code else ("money" if any(
                     k in code for k in ("¥", "$", "€", "0,0")) else "")
                 n = min(len(cats), len(vals))
-                if n >= 2:
+                # A chart part with no cache is still worth keeping when it
+                # names its cells: the workbook can answer for it below.
+                if n >= 2 or (val_ref and not vals):
                     out.append({"title": title or f"{path.stem} 图表 {len(out) + 1}",
                                 "series": series, "cats": cats[:n],
-                                "vals": vals[:n], "unit": unit})
+                                "vals": vals[:n], "unit": unit,
+                                "cat_ref": cat_ref, "val_ref": val_ref,
+                                "tx_ref": tx_ref})
     except Exception:  # noqa: BLE001
         pass
     return out
@@ -323,6 +414,13 @@ def augment(b: Bundle, root: str | Path, *, pages: bool = True) -> Bundle:
             src = Path(doc.source)
             if src.suffix.lower() == ".pdf" and len(doc.text) < 600:
                 pdf_pages(src, b.pictures, out_dir)
+
+    # A workbook's own charts carry cached values the cells may no longer hold.
+    books = {Path(t.source) for t in b.tables
+             if Path(t.source).suffix.lower() in (".xlsx", ".xlsm")}
+    for src in sorted(books):
+        for chart in xlsx_charts(src):
+            _chart_table(b, chart, src)
 
     for outline in b.outlines:
         src = Path(outline.source)
