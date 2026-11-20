@@ -382,28 +382,28 @@ def section(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
         # Preview the chapter, not the whole deck: stop at the next section.
         upcoming = []
         for i, x in enumerate(plan.slides[idx:], start=idx + 1):
-            if x.layout in ("section", "closing") or len(upcoming) >= 5:
+            if x.layout in ("section", "closing") or len(upcoming) >= 4:
                 break
             upcoming.append((i, x))
         if upcoming:
             add_rect(slide, MARGIN_X, Inches(5.16), Inches(7.30), Emu(6350),
                      _mix(theme.dark, "#FFFFFF", 0.18))
             for k, (page, item) in enumerate(upcoming):
-                yy = 5.32 + k * 0.36
+                yy = 5.30 + k * 0.35
                 add_text(slide, MARGIN_X, Inches(yy), Inches(0.55), Inches(0.28),
-                         f"{page:02d}", theme, size=Pt(9), bold=True,
-                         color=_rgb(theme.dark_muted))
+                         f"{page:02d}", theme, size=Pt(9.5), bold=True,
+                         color=_rgb(theme.accent))
                 label = subst(item.title, facts)
                 label = label if len(label) <= 26 else label[:25] + "…"
                 add_text(slide, MARGIN_X + Inches(0.60), Inches(yy - 0.02),
-                         Inches(5.95), Inches(0.32), label, theme, size=Pt(11.5),
+                         Inches(5.95), Inches(0.32), label, theme, size=Pt(12.5),
                          color=_rgb(theme.dark_ink), line_spacing=1.2)
             # An agenda that quietly stops at five items implies the chapter
             # is five pages long. Say how many pages the reader is in for.
             rest = len(plan.slides) - idx - len(upcoming)
             tail = f"…  共 {len(plan.slides)} 页" if rest > 0 else f"共 {len(plan.slides)} 页"
             add_text(slide, MARGIN_X + Inches(0.60),
-                     Inches(5.32 + len(upcoming) * 0.36), Inches(5.9), Inches(0.26),
+                     Inches(5.34 + len(upcoming) * 0.35), Inches(5.9), Inches(0.26),
                      tail, theme, size=Pt(9), color=_rgb(theme.dark_muted))
             page_number(slide, idx, theme)
             return
