@@ -108,6 +108,7 @@ def _human(label: str) -> str:
     by a person, so drop the pivot grammar and the aggregate hint."""
     text = re.sub(r"\s*按\s*", " · ", label or "")
     text = re.sub(r"（(求和|均值|合计|最大|最小|计数)）$", "", text)
+    text = re.sub(r"（\s*逐期\s*）", "", text)
     return text.strip()
 
 

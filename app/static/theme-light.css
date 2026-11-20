@@ -152,7 +152,7 @@ aside.rail{
 .themes{display:flex;align-items:center;gap:8px}
 .themes span{font-size:9.5px;color:var(--faint);letter-spacing:.08em;margin-right:1px}
 .themes b{font-size:10.5px;font-weight:500;color:var(--muted);letter-spacing:.02em;margin-left:3px;white-space:nowrap}
-.sw{width:26px;height:26px;border-radius:8px;border:1px solid rgba(15,23,42,.12);position:relative;transition:.15s;padding:0;overflow:hidden;background:#fff}
+.sw{flex:0 0 auto;width:26px;height:26px;border-radius:8px;border:1px solid rgba(15,23,42,.12);position:relative;transition:.15s;padding:0;overflow:hidden;background:#fff}
 .sw:hover{transform:translateY(-1px);box-shadow:0 4px 10px -6px rgba(15,23,42,.5)}
 .sw.on{box-shadow:0 0 0 2px #fff,0 0 0 3.5px var(--brand)}
 .sw i{position:absolute;left:0;right:0;bottom:0;height:8px;background:var(--a)}
@@ -368,3 +368,7 @@ aside.rail{
   margin-top:7px; padding-left:9px; border-left:2px solid var(--brand-soft);
   font-size:12px; line-height:1.65; color:var(--muted);
 }
+
+[hidden]{display:none!important}
+
+#themes{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
