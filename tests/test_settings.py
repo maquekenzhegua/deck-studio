@@ -84,3 +84,29 @@ class BaseUrlTest(unittest.TestCase):
     def test_trailing_slash_is_dropped(self):
         self.assertEqual(settings._clean({"base_url": "https://api.moonshot.cn/v1/"})["base_url"],
                          "https://api.moonshot.cn/v1")
+
+
+class PresetCoverageTest(unittest.TestCase):
+    """The README promises these providers; the preset list has to keep them.
+
+    A missing preset is not a cosmetic bug: a user with only a Baichuan key has
+    no way to type the endpoint from memory, so the app looks broken to them.
+    """
+
+    REQUIRED = ("deepseek", "dashscope", "zhipu", "moonshot", "doubao",
+                "baichuan", "minimax", "siliconflow", "ollama")
+
+    def test_every_named_provider_has_a_usable_preset(self) -> None:
+        for key in self.REQUIRED:
+            with self.subTest(provider=key):
+                self.assertIn(key, settings.PRESETS)
+                preset = settings.PRESETS[key]
+                self.assertTrue(preset["base_url"].startswith("http"))
+                self.assertTrue(preset["model"])
+                self.assertTrue(preset["note"])
+
+    def test_preset_urls_are_not_double_suffixed(self) -> None:
+        for key, preset in settings.PRESETS.items():
+            with self.subTest(provider=key):
+                clean = settings._clean({"base_url": preset["base_url"]})
+                self.assertEqual(clean["base_url"], preset["base_url"])
