@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deck Studio · 把资料变成一场汇报</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563EB'/%3E%3Ctext x='16' y='23' font-family='Segoe UI' font-size='19' font-weight='800' text-anchor='middle' fill='%23FFFFFF'%3ED%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="/static/theme-light.css?v=1">
+<link rel="stylesheet" href="/static/theme-light.css?v=2">
 </head>
 <body>
 <div class="app">
@@ -95,10 +95,22 @@
 
         <div class="content" id="content">
           <div class="empty" id="empty">
-            <div class="big">01</div>
-            <h3>先给素材，再谈设计</h3>
-            <p>拖进一份 Excel、一份 Word 或几张截图。系统会自己找数字、排结构、选版式，最后交出一份能改的 PPTX。</p>
-            <button class="btn" id="emptySample">用示例数据看一遍</button>
+            <div class="empty-copy">
+              <span class="kick">从材料到成稿</span>
+              <h3>先给素材，再谈设计</h3>
+              <p>拖进一份 Excel、一份 Word 或几张截图。系统会自己找数字、排结构、选版式，最后交出一份能改的 PPTX。</p>
+              <ol class="steps">
+                <li><b>01</b><span>把文件拖进左侧，混合格式也可以</span></li>
+                <li><b>02</b><span>看它挑出的论点，改标题、换版式</span></li>
+                <li><b>03</b><span>导出 PPTX / PDF / 每页 PNG</span></li>
+              </ol>
+              <button class="btn" id="emptySample">用示例数据看一遍</button>
+            </div>
+            <div class="empty-shots" aria-hidden="true">
+              <img src="/static/preview-1.jpg" alt="">
+              <img src="/static/preview-2.jpg" alt="">
+              <img src="/static/preview-3.jpg" alt="">
+            </div>
           </div>
           <div class="outline" id="outline" style="display:none"></div>
           <div class="grid" id="grid" style="display:none"></div>

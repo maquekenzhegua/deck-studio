@@ -47,6 +47,8 @@ python -m deck.cli audit  out/deck.pptx                # 设计规则体检
 
 界面右上角 **模型** → 选预设 → 填 Key → **测试连接** → 保存。不用改环境变量、不用重启。
 
+![模型设置](docs/settings.png)
+
 内置预设：DeepSeek、通义千问（DashScope）、智谱 GLM、Moonshot、豆包（方舟）、SiliconFlow、MiniMax、OpenAI、本机 Ollama。
 视觉模型单独一栏，留空就沿用文本模型的地址与 Key；只有显式填了视觉模型，界面才会显示「可读图」。
 
