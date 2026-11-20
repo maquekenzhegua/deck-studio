@@ -69,6 +69,11 @@ class ApplyTest(unittest.TestCase):
         plan, _ = chartpick.apply(self.plan_with("增量几乎全部来自华东", fact_ids="f1,f2"), [fact(), growth])
         self.assertEqual(plan.slides[0].variant, "waterfall")
 
+    def test_a_scorecard_is_left_alone(self) -> None:
+        plan = self.plan_with("智能硬件吃掉一半收入", variant="heatmap", fact_ids="f1,f2")
+        chartpick.apply(plan, [fact()])
+        self.assertEqual(plan.slides[0].variant, "heatmap")
+
     def test_other_layouts_are_never_touched(self) -> None:
         plan = Plan("标题", "副标", [Slide(layout="table", title="智能硬件吃掉一半收入", fact="f1")])
         chartpick.apply(plan, [fact()])

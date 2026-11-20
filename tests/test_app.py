@@ -191,3 +191,15 @@ class PlanFileTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreviewDensityTest(unittest.TestCase):
+    """Fifteen 16:9 pages at two per row is a scroll, not a review."""
+
+    def test_the_page_honours_a_column_preference(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        html = (root / "app" / "static" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="cols"', html)
+        self.assertIn("deck.cols", html)
+        css = (root / "app" / "static" / "theme-light.css").read_text(encoding="utf-8")
+        self.assertIn("var(--cols,2)", css)

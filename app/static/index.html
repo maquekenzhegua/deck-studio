@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deck Studio · 把资料变成一场汇报</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563EB'/%3E%3Ctext x='16' y='23' font-family='Segoe UI' font-size='19' font-weight='800' text-anchor='middle' fill='%23FFFFFF'%3ED%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="/static/theme-light.css?v=12">
+<link rel="stylesheet" href="/static/theme-light.css?v=13">
 </head>
 <body>
 <div class="app">
@@ -85,6 +85,14 @@
                 <option value="6">6</option>
                 <option value="9">9</option>
                 <option value="12">12</option>
+              </select>
+            </label>
+            <label class="pgs" title="预览每行放几页；页面多时用小图看节奏">
+              <span>视图</span>
+              <select id="cols">
+                <option value="2">2 列</option>
+                <option value="3">3 列</option>
+                <option value="4">4 列</option>
               </select>
             </label>
             <div class="themes" id="themes"><span>主题</span></div>
@@ -249,7 +257,7 @@ const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => [...r.querySelectorAll(s)];
 const LAYOUT_OPTS = [['title','封面'],['section','章节'],['chart','图表'],['kpi_row','关键数'],['key_figure','单个数字'],['table','表格'],['bullets','要点'],['notes','原文摘录'],['quote','引语'],['compare','对比'],['split_image','图文'],['image_full','全幅图'],['closing','收尾']];
 const S = {
-  slidesWanted: Number(localStorage.getItem('deck.pages') || 0), plan:null, facts:[], files:[], pictures:[], qa:null, planner:null, settings:null, theme:'navy', pages:[], tab:'outline', lb:0, meta:null, lastExport:'', pptx:null, brief:'' };
+  slidesWanted: Number(localStorage.getItem('deck.pages') || 0), plan:null, facts:[], files:[], pictures:[], qa:null, planner:null, settings:null, theme:'navy', pages:[], tab:'outline', lb:0, meta:null, lastExport:'', pptx:null, brief:'', cols:Number(localStorage.getItem('deck.cols')||2) };
 function modelOn(){ return !!(S.settings && S.settings.text && S.settings.text.model); }
 
 function toast(msg, action, fn){
@@ -462,6 +470,7 @@ function move(i, d){
   renderOutline();
 }
 function renderGrid(){
+  applyCols();
   const g = $('#grid');
   g.innerHTML = S.pages.map((u,i)=>`
     <div class="slide-card" data-i="${i}">
@@ -884,6 +893,9 @@ $('#notesBtn').onclick = async ()=>{
 };
 $('#pages').value = String(S.slidesWanted || 0);
 $('#pages').onchange = (e)=>{ S.slidesWanted = Number(e.target.value) || 0; localStorage.setItem('deck.pages', S.slidesWanted); };
+function applyCols(){ $('#grid').style.setProperty('--cols', String(S.cols || 2)); }
+$('#cols').value = String(S.cols || 2);
+$('#cols').onchange = (e)=>{ S.cols = Number(e.target.value) || 2; localStorage.setItem('deck.cols', S.cols); applyCols(); };
 $('#quickGo').onclick = applyQuick;
 $('#quickIn').onkeydown = e=>{ if(e.key === 'Enter'){ e.preventDefault(); applyQuick(); } };
 $('#exportBtn').onclick = e=>{ e.stopPropagation(); $('#expMenu').classList.toggle('on'); };

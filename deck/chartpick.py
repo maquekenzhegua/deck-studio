@@ -52,6 +52,9 @@ def apply(plan, facts) -> tuple[object, list[str]]:
     for i, slide in enumerate(plan.slides, 1):
         if slide.layout != "chart":
             continue
+        # A scorecard is a deliberate multi-fact page; one fact cannot judge it.
+        if slide.variant == "heatmap":
+            continue
         ids = [x.strip() for x in (slide.fact or "").split(",") if x.strip()]
         fact = index.get(ids[0]) if ids else None
         if fact is None:
