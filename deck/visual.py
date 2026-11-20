@@ -499,7 +499,11 @@ def prepare_picture(path: str, *, box_w: int, box_h: int, theme: Theme | None = 
         dark = theme.rgb("dark")
         accent = theme.rgb("accent")
         # A real duotone: shadows map to ink, highlights to a tint of accent.
-        shadow = tuple(int(str(x), 16) for x in (theme.dark.lstrip("#")[i:i + 2] for i in (0, 2, 4)))
+        raw = tuple(int(str(x), 16) for x in (theme.dark.lstrip("#")[i:i + 2] for i in (0, 2, 4)))
+        # Pure #070A0E shadows swallow a photograph: every midtone lands on
+        # black and the cover looks like a gradient, not a picture. Lift the
+        # shadow 10% toward the accent so shapes survive.
+        shadow = tuple(int(c + (a - c) * 0.10) for c, a in zip(raw, accent))
         # Highlights stay close to the accent: pushing them 55% toward white
         # turned every photo into pale mint and killed the white type on top.
         light = tuple(min(255, int(c + (255 - c) * 0.42)) for c in
