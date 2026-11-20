@@ -32,7 +32,7 @@ from app import paths, settings  # noqa: E402
 from deck import (agent, compose, compute, edit, eyes, ingest, multimodal,  # noqa: E402
                   readiness, render2, review as reviewmod, verify)
 from deck.llm import Client, LLMError  # noqa: E402
-from deck.plan import LAYOUTS, Plan, Slide  # noqa: E402
+from deck.plan import LAYOUTS, Plan, Slide, _validate  # noqa: E402
 from deck.visual import THEMES  # noqa: E402
 
 STATIC = paths.resource("app", "static")
@@ -55,6 +55,41 @@ STATE: dict[str, Any] = {
     "started": time.time(),
     "client": None,
 }
+PLAN_FILE = HOME / "plan.json"
+
+
+def _save_plan(plan: Plan | None, planner: dict | None, theme: str | None) -> None:
+    """The outline outlives the window.
+
+    A desktop app that forgets a ten-minute model plan because it was closed is
+    not a desktop app. Written atomically so a crash mid-write cannot leave a
+    half-JSON that makes the next launch look broken.
+    """
+    if plan is None:
+        return
+    data = {"plan": asdict(plan), "planner": planner or {}, "theme": theme or ""}
+    tmp = PLAN_FILE.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(PLAN_FILE)
+    except OSError as exc:
+        print(f"[deck] plan save skipped: {exc}", file=sys.stderr)
+
+
+def _read_plan(facts, pictures) -> tuple[Plan | None, dict, str]:
+    if not PLAN_FILE.exists():
+        return None, {}, ""
+    try:
+        data = json.loads(PLAN_FILE.read_text(encoding="utf-8"))
+        plan = _validate(data.get("plan") or {}, facts, pictures, None)
+        if not plan.slides:
+            return None, {}, ""
+        return plan, data.get("planner") or {}, data.get("theme") or ""
+    except Exception as exc:  # noqa: BLE001 - a stale file must not block startup
+        print(f"[deck] plan restore skipped: {exc}", file=sys.stderr)
+        return None, {}, ""
+
+
 LOCK = threading.RLock()
 
 THEME_COPY = {
@@ -185,7 +220,12 @@ def client_for_vision() -> Client | None:
         return None
 
 
-def reload_bundle(use_model: bool = False) -> None:
+def persist() -> None:
+    with LOCK:
+        _save_plan(STATE.get("plan"), STATE.get("planner"), STATE.get("theme"))
+
+
+def reload_bundle(use_model: bool = False, restore: bool = False) -> None:
     """Read the workspace and draft an outline.
 
     Uploading must answer immediately: a model plan takes 30–150 seconds, and
@@ -196,16 +236,29 @@ def reload_bundle(use_model: bool = False) -> None:
     multimodal.augment(bundle, MEDIA, pages=True)
     adopt_template(bundle)
     facts = compute.extract(bundle)
-    result = agent.plan(bundle, facts, client=client_for_model() if use_model else None)
+    saved, saved_planner, saved_theme = _read_plan(facts, bundle.pictures) if restore else (None, {}, "")
+    if saved is not None:
+        # Reopen the deck the user was working on, not a fresh draft of the same
+        # files: a model outline can cost minutes and a dozen small edits.
+        plan, planner = saved, saved_planner or {"who": "restored", "label": "已恢复上次的大纲", "log": []}
+        result = None
+    else:
+        result = agent.plan(bundle, facts, client=client_for_model() if use_model else None)
+        plan = result.plan
+        planner = {"who": result.planner, "model": result.model,
+                   "label": result.summary(), "log": result.log}
     with LOCK:
         STATE["bundle"] = bundle
         STATE["facts"] = facts
-        STATE["plan"] = result.plan
-        STATE["planner"] = {"who": result.planner, "model": result.model,
-                            "label": result.summary(), "log": result.log}
+        STATE["plan"] = plan
+        STATE["planner"] = planner
+        if saved_theme in THEMES:
+            STATE["theme"] = saved_theme
         STATE["pptx"] = None
         STATE["pages"] = []
         STATE["qa"] = None
+    if result is not None:
+        persist()
 
 
 def readiness_now() -> dict:
@@ -322,7 +375,7 @@ def create_app() -> FastAPI:
             print(f"[deck] settings skipped: {exc}")
         try:
             if any(UPLOADS.iterdir()):
-                reload_bundle()
+                reload_bundle(restore=True)
         except Exception as exc:  # noqa: BLE001
             print(f"[deck] workspace restore skipped: {exc}")
 
@@ -428,6 +481,7 @@ def create_app() -> FastAPI:
             STATE["plan"] = plan
             STATE["planner"] = {"who": result.planner, "model": result.model,
                                 "label": result.summary(), "log": result.log}
+        persist()
         return {"plan": plan_json(plan), "planner": STATE["planner"],
                 "review": review_now(), "readiness": readiness_now()}
 
@@ -485,6 +539,7 @@ def create_app() -> FastAPI:
 
         with LOCK:
             STATE.update(plan=plan, theme=theme, pptx=str(pptx), pages=pages, qa=qa)
+        persist()
         return {
             "pptx": f"/files/{pptx.name}",
             "pages": pages,
@@ -547,6 +602,7 @@ def create_app() -> FastAPI:
             raise HTTPException(400, "没有这个主题")
         with LOCK:
             STATE["theme"] = body.theme
+        persist()
         return {"theme": body.theme}
 
     @app.post("/api/edit")
@@ -588,6 +644,7 @@ def create_app() -> FastAPI:
                 STATE["theme"] = tid
             STATE["plan"] = new_plan
             changed = len(new_plan.slides) != len(plan.slides) or new_plan != plan
+        persist()
         return {"plan": asdict(new_plan), "message": message,
                 "theme": STATE.get("theme"), "changed": bool(changed),
                 "planner": STATE.get("planner"), "review": review_now(),
@@ -608,6 +665,7 @@ def create_app() -> FastAPI:
                 raise HTTPException(502, "模型这次没有写出可用的讲稿，稍后再试")
             plan, message = got
             STATE["plan"] = plan
+        persist()
         return {"plan": asdict(plan), "message": message,
                 "planner": STATE.get("planner")}
 

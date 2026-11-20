@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 HOME = Path(tempfile.mkdtemp(prefix="deck-app-"))
@@ -130,6 +131,62 @@ class AppTest(unittest.TestCase):
     def test_state_reports_where_files_live(self) -> None:
         state = self.client.get("/api/state").json()
         self.assertTrue(state["home"].startswith(str(HOME.parent)))
+
+
+class PlanFileTest(unittest.TestCase):
+    """A model outline costs minutes; closing the window must not lose it."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.client = TestClient(app)
+        cls.client.__enter__()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.client.__exit__(None, None, None)
+
+    def _plan(self):
+        from deck.plan import Plan, Slide
+        return Plan("测试标题", "副标题", [
+            Slide("title", "测试标题", note="副标题"),
+            Slide("bullets", "两件事", bullets=["一", "二"]),
+            Slide("closing", "收尾"),
+        ])
+
+    def test_round_trip_keeps_the_title_and_theme(self):
+        import tempfile
+        from app import server
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "plan.json"
+            with mock.patch.object(server, "PLAN_FILE", target):
+                server._save_plan(self._plan(), {"label": "模型主导"}, "editorial")
+                plan, planner, theme = server._read_plan([], [])
+        self.assertEqual(plan.deck_title, "测试标题")
+        self.assertEqual(theme, "editorial")
+        self.assertEqual(planner["label"], "模型主导")
+
+    def test_a_corrupt_file_is_ignored_not_fatal(self):
+        import tempfile
+        from app import server
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "plan.json"
+            target.write_text("{ not json", encoding="utf-8")
+            with mock.patch.object(server, "PLAN_FILE", target):
+                plan, planner, theme = server._read_plan([], [])
+        self.assertIsNone(plan)
+        self.assertEqual((planner, theme), ({}, ""))
+
+    def test_the_endpoint_writes_the_file_after_an_edit(self):
+        import tempfile
+        from app import server
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "plan.json"
+            with mock.patch.object(server, "PLAN_FILE", target):
+                self.client.post("/api/sample")
+                self.client.post("/api/edit", json={"text": "第 1 页标题改成：先讲结论"})
+                self.assertTrue(target.exists())
+                saved = target.read_text(encoding="utf-8")
+        self.assertIn("先讲结论", saved)
 
 
 if __name__ == "__main__":
