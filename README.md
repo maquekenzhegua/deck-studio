@@ -8,7 +8,7 @@
 
 不是一个套模板的「一键生成」。它先把你手上的材料读懂、算清楚，再按一套从 19 份真实 deck（1144 页）里量出来的设计规范排版；模型可以主导论证，但**任何一个数字都必须能指回原始表格**。
 
-> **下载即用**：[Deck Studio 0.7.2 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
+> **下载即用**：[Deck Studio 0.7.3 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
 
 ![Deck Studio](docs/app-window.png)
 
@@ -65,7 +65,7 @@ python -m deck.cli audit  out/deck.pptx                # 设计规则体检
 
 ![模型设置](docs/settings.png)
 
-内置预设：DeepSeek、通义千问（DashScope）、智谱 GLM、Moonshot、豆包（方舟）、SiliconFlow、MiniMax、OpenAI、本机 Ollama。
+内置预设：DeepSeek、通义千问（DashScope）、智谱 GLM、Moonshot、豆包（方舟）、百川智能、MiniMax、SiliconFlow、OpenAI、本机 Ollama。切换只改这一个面板，不碰环境变量。
 视觉模型单独一栏，留空就沿用文本模型的地址与 Key；只有显式填了视觉模型，界面才会显示「可读图」。
 
 - 文本模型走 `deck/llm.py`（任意 OpenAI 兼容 `/chat/completions`），视觉走 `deck/vision.py`。
