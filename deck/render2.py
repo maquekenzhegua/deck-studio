@@ -343,11 +343,30 @@ def cover(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
 
 
 def section(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
-            idx: int, sec: int) -> None:
+            idx: int, sec: int, photo: Picture | None = None) -> None:
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(slide, theme, dark=True)
-    add_gradient(slide, 0, 0, SLIDE_W, SLIDE_H,
-                 _rgb(theme.dark), _mix(theme.dark, theme.accent, 0.22), angle=20)
+    # A chapter page is the one place a photograph earns its keep: it resets
+    # the eye between two stretches of argument. Fall back to the gradient
+    # when the material has no picture to lend.
+    shot = False
+    if photo is not None and Path(photo.path).exists():
+        try:
+            # Same subject as the cover, a different crop: a chapter page is a
+            # detail, not a reprint of page one.
+            # Wider than the page and pushed left: the same subject, a tighter
+            # pan. An identical reprint of the cover reads as a mistake.
+            _photo(slide, photo.path, Inches(-1.30), 0, SLIDE_W + Inches(2.60),
+                   SLIDE_H, theme, duotone=True, focus=(0.62, 0.46))
+            shot = True
+        except Exception:  # noqa: BLE001 - a broken file must not kill the deck
+            shot = False
+    if shot:
+        add_scrim(slide, 0, 0, SLIDE_W, SLIDE_H, _rgb(theme.dark),
+                  [(0, 82), (55, 62), (100, 80)], angle=0)
+    else:
+        add_gradient(slide, 0, 0, SLIDE_W, SLIDE_H,
+                     _rgb(theme.dark), _mix(theme.dark, theme.accent, 0.22), angle=20)
 
     num = f"{sec:02d}"
     # A 300pt numeral clipped by the page edge reads as a printing accident,
@@ -1050,9 +1069,9 @@ def numbers(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
 
 
 def _photo(slide, path: str, left, top, width, height, theme: Theme,
-           duotone: bool = True) -> None:
+           duotone: bool = True, focus=(0.5, 0.5)) -> None:
     add_picture(slide, path, left, top, width, height, theme,
-                duotone=duotone, darken=0.06 if duotone else 0.0)
+                duotone=duotone, darken=0.06 if duotone else 0.0, focus=focus)
 
 
 def image_full(prs, plan: Plan, s: Slide, facts: dict[str, Fact],
@@ -1526,13 +1545,14 @@ def build(plan: Plan, facts: list[Fact], pictures: list[Picture], out: str,
     total = len(plan.slides)
     sec = 0
 
+    sec_photo = next((p for p in pictures if p.kind == "photo"), None)
     for i, s in enumerate(plan.slides, 1):
         before = len(prs.slides._sldIdLst)
         if s.layout == "title":
             cover(prs, plan, s, fmap, th, pmap)
         elif s.layout == "section":
             sec += 1
-            section(prs, plan, s, fmap, th, i, sec)
+            section(prs, plan, s, fmap, th, i, sec, photo=sec_photo)
         elif s.layout == "key_figure":
             statement(prs, plan, s, fmap, th, i, total)
         elif s.layout == "kpi_row":

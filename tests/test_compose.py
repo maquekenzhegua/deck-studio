@@ -199,3 +199,20 @@ class PictureOnlyTest(unittest.TestCase):
         render2.build(plan, [], bundle.pictures, str(out))
         self.assertGreater(out.stat().st_size, 10_000)
 
+class SectionPhotoTest(unittest.TestCase):
+    """A chapter page borrows the cover's subject, not a blank gradient."""
+
+    def test_section_page_carries_a_photo(self):
+        import tempfile, pathlib
+        from pptx import Presentation
+        from deck import compute, ingest, multimodal, compose, render2
+        b = ingest.load(DATA)
+        multimodal.augment(b, pathlib.Path(tempfile.mkdtemp()) / "m")
+        facts = compute.extract(b)
+        plan = compose.draft(b, facts)
+        out = pathlib.Path(tempfile.mkdtemp()) / "s.pptx"
+        render2.build(plan, facts, b.pictures, out, theme="editorial")
+        prs = Presentation(str(out))
+        page = prs.slides[1]
+        pics = [sh for sh in page.shapes if sh.shape_type == 13]
+        self.assertTrue(pics, "section page should carry a picture when the material has a photo")
