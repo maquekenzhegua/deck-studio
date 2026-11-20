@@ -103,3 +103,37 @@ class TwoMeasureTableTest(unittest.TestCase):
         self.assertIn(vhead, text)
         head = (count.column or count.label).split("按")[0].strip()[:6]
         self.assertIn(head, text)
+
+
+class AutoSecondMeasureTest(unittest.TestCase):
+    """A model that binds one fact still gets the column its title needs."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from deck import ingest, compute
+        cls.bundle = ingest.load(DATA)
+        cls.facts = compute.extract(cls.bundle)
+
+    def test_a_count_table_gains_money(self):
+        import tempfile
+        from deck.plan import Plan, Slide
+        from deck import render2
+        from pptx import Presentation
+        counts = [f for f in self.facts if f.unit == "count" and len(f.points) >= 4]
+        money = [m for m in self.facts if m.unit == "money" and len(m.points) >= 4]
+        count = next(f for f in counts
+                     if any({k for k, _ in m.points} == {k for k, _ in f.points} for m in money))
+        plan = Plan(deck_title="d", subtitle="", slides=[
+            Slide(layout="table", title="客户多但收入少", fact=count.id),
+            Slide(layout="closing", title="收尾", bullets=["一", "二"]),
+        ])
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "d.pptx"
+            render2.build(plan, self.facts, {}, out, theme="editorial")
+            text = "\n".join(sh.text_frame.text for sl in Presentation(str(out)).slides
+                             for sh in sl.shapes if sh.has_text_frame)
+        mate = [m for m in money
+                if {k for k, _ in m.points} == {k for k, _ in count.points}]
+        self.assertTrue(mate)
+        head = (mate[0].column or mate[0].label).split("按")[0].strip()[:6]
+        self.assertIn(head, text)

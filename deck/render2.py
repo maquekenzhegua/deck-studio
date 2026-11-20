@@ -748,18 +748,31 @@ def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     # six-row table from pushing its own reading band over the source line.
     row_h = Inches(min(0.82, max(0.46, (5.30 - 2.18) / max(len(pts), 1))))
     header_h = Inches(0.38)
-    # A second measure turns "东北客户数第一" into "客户数第一、销售额第五":
-    # the claim on the slide becomes checkable on the same slide.
-    extra = facts.get(ids[1]) if len(ids) > 1 else None
-    if extra is not None:
-        names = {k for k, _ in f.points}
-        if not extra.points or any(k not in names for k, _ in extra.points):
-            extra = None
-    col_rank, col_name, col_bar = 0.45, 2.05, 4.55
     # A conversion column only means something when the rows are stages of one
     # funnel. On a ranked breakdown it turns "second biggest / biggest" into a
     # fake 96% and invites the reader to read a story that is not there.
     funnel = (f.chart == "funnel")
+    # A second measure turns "东北客户数第一" into "客户数第一、销售额第五":
+    # the claim on the slide becomes checkable on the same slide. A model that
+    # binds one id still gets the second column, because the alternative is a
+    # title the reader has to take on faith.
+    names = {k for k, _ in f.points}
+    extra = facts.get(ids[1]) if len(ids) > 1 else None
+
+    def _fits(g: Fact) -> bool:
+        return bool(g) and bool(g.points) and g.id != f.id and all(
+            k in names for k, _ in g.points)
+
+    if extra is not None and not _fits(extra):
+        extra = None
+    if extra is None and not funnel:
+        # count next to money answers "many customers, little revenue"; ratio
+        # next to money answers "big but slow". Never the same unit twice.
+        want = "money" if f.unit in ("count", "raw", "") else "count"
+        pool = [g for g in facts.values() if _fits(g) and g.unit == want]
+        if pool:
+            extra = max(pool, key=lambda g: g.score)
+    col_rank, col_name, col_bar = 0.45, 2.05, 4.55
     col_conv = 0.95 if funnel else 0.0
     col_val, col_gap = 1.30, 0.26
     col_extra = 1.32 if extra is not None else 0.0
