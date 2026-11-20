@@ -76,6 +76,15 @@
             <button class="tab" data-tab="preview">预览 <em id="tabP">0</em></button>
           </div>
           <div class="tools">
+            <label class="pgs" title="模型排页序时用几页；自动按资料量决定">
+              <span>页数</span>
+              <select id="pages">
+                <option value="0">自动</option>
+                <option value="6">6</option>
+                <option value="9">9</option>
+                <option value="12">12</option>
+              </select>
+            </label>
             <div class="themes" id="themes"><span>主题</span></div>
             <button class="btn tiny ghost" id="folderBtn" title="打开输出文件夹">文件夹</button>
             <div class="exp">
@@ -227,7 +236,8 @@
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => [...r.querySelectorAll(s)];
 const LAYOUT_OPTS = [['title','封面'],['section','章节'],['chart','图表'],['kpi_row','关键数'],['key_figure','单个数字'],['table','表格'],['bullets','要点'],['notes','原文摘录'],['quote','引语'],['compare','对比'],['split_image','图文'],['image_full','全幅图'],['closing','收尾']];
-const S = { plan:null, facts:[], files:[], pictures:[], qa:null, planner:null, settings:null, theme:'navy', pages:[], tab:'outline', lb:0, meta:null, lastExport:'', pptx:null, brief:'' };
+const S = {
+  slidesWanted: Number(localStorage.getItem('deck.pages') || 0), plan:null, facts:[], files:[], pictures:[], qa:null, planner:null, settings:null, theme:'navy', pages:[], tab:'outline', lb:0, meta:null, lastExport:'', pptx:null, brief:'' };
 function modelOn(){ return !!(S.settings && S.settings.text && S.settings.text.model); }
 
 function toast(msg, action, fn){
@@ -535,7 +545,7 @@ async function build(force=false, replan=false){
       let pr;
       try{
         pr = await fetch('/api/plan', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({deck_title:S.plan.deck_title || '', subtitle:S.plan.subtitle || '', brief:S.brief || ''})});
+        body: JSON.stringify({deck_title:S.plan.deck_title || '', subtitle:S.plan.subtitle || '', brief:S.brief || '', slides:S.slidesWanted || 0})});
       } finally { clearInterval(tick); }
       if(pr.ok){
         const pd = await pr.json();
@@ -804,6 +814,8 @@ $('#emptySample').onclick = loadSample;
 // every click a four-minute wait, which reads as a hang.
 $('#buildBtn').onclick = ()=>build(false, !S.pages.length && modelOn());
 $('#replanBtn').onclick = ()=>build(false, true);
+$('#pages').value = String(S.slidesWanted || 0);
+$('#pages').onchange = (e)=>{ S.slidesWanted = Number(e.target.value) || 0; localStorage.setItem('deck.pages', S.slidesWanted); };
 $('#quickGo').onclick = applyQuick;
 $('#quickIn').onkeydown = e=>{ if(e.key === 'Enter'){ e.preventDefault(); applyQuick(); } };
 $('#exportBtn').onclick = e=>{ e.stopPropagation(); $('#expMenu').classList.toggle('on'); };

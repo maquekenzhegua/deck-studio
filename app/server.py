@@ -262,6 +262,7 @@ class PlanBody(BaseModel):
     brief: str = ""
     deck_title: str = ""
     subtitle: str = ""
+    slides: int = 0
 
 
 class ExportBody(BaseModel):
@@ -399,7 +400,8 @@ def create_app() -> FastAPI:
         text_model = settings.load()["model"] if settings.load()["base_url"] else ""
         ask = body.brief or ""
         result = agent.plan(bundle, facts, ask, deck_title=body.deck_title or None,
-                            subtitle=body.subtitle, client=client_for_model())
+                            subtitle=body.subtitle, slides=body.slides,
+                            client=client_for_model())
         plan = result.plan
         if body.subtitle:
             plan.subtitle = body.subtitle
