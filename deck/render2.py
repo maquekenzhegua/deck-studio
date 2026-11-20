@@ -1095,11 +1095,21 @@ def notes(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     rows = []
     for text in items:
         lead, body = _split_lead(text)
+        if not lead:  # a sentence with no "claim：" prefix is still the page
+            lead, body = body, ""
         line_h = estimate_lines(lead, Inches(11.2), body_pt) * body_pt * 1.58 / 72.0
         rows.append((lead, body, line_h))
     gap = 0.44
     block = sum(r[2] + (0.30 if r[1] else 0.0) for r in rows) + gap * (n - 1)
     y = 1.92 + max(0.0, (4.30 - block) * 0.42)
+    # A page of four short sentences leaves 96% paper. Put them on a card so
+    # the page reads as a composed document rather than a mostly-empty slide.
+    pad = 0.52 if n > 1 else 0.34
+    add_rect(slide, MARGIN_X - Inches(pad), Inches(y - pad + 0.04),
+             CONTENT_W + Inches(pad * 2), Inches(block + pad * 2),
+             _rgb(theme.soft))
+    add_rect(slide, MARGIN_X - Inches(pad), Inches(y - pad + 0.04),
+             Emu(28575), Inches(block + pad * 2), _rgb(theme.accent))
     for i, (lead, body, line_h) in enumerate(rows):
         if i:
             add_rect(slide, MARGIN_X, Inches(y - gap * 0.52), CONTENT_W,

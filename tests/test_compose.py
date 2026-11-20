@@ -130,9 +130,12 @@ class TextOnlyTest(unittest.TestCase):
             if s.layout != "notes":
                 continue
             self.assertTrue(s.bullets)
+            # The sentence stays whole; where it came from is a page-level
+            # footnote, not a suffix glued to the quotation.
+            self.assertIn("来源：", s.note)
+            self.assertTrue(s.note.split("来源：")[-1].strip())
             for b in s.bullets:
-                self.assertIn("——", b)
-                self.assertNotIn(".md", b)
+                self.assertNotIn("来源", b)
 
     def test_renders(self) -> None:
         from deck import render2

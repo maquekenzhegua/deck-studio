@@ -532,10 +532,11 @@ def draft_text(bundle) -> Plan:
     rest = picks[1:4]
     if rest:
         cn = {1: "一", 2: "两", 3: "三"}.get(len(rest), str(len(rest)))
+        sources = list(dict.fromkeys(src for _, src in rest))
         slides.append(Slide(
             "notes", f"文档里的{cn}句话",
-            note="原文摘录，未改写；要图表，先给数字。",
-            bullets=[f"{line}：—— {src}" for line, src in rest],
+            note="原文摘录，未改写 · 来源：" + "、".join(sources),
+            bullets=[line for line, _ in rest],
         ))
     slides.append(Slide("closing", "把这几句话带进讨论", bullets=[]))
     return Plan(deck_title, "文档要点", slides)
