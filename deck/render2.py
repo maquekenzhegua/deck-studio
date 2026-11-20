@@ -583,11 +583,16 @@ def _fallback_readings(f: Fact) -> list[str]:
 
 def chart(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
           idx: int, total: int) -> None:
+    ids = _ids(s)
+    f = facts.get(ids[0]) if ids else None
+    # A chart page bound to a single number has nothing to plot. Drawing an
+    # empty canvas with a title over it is the worst outcome; say the number
+    # instead, at the size it deserves.
+    if f is not None and not f.points and not getattr(f, "series", None):
+        return statement(prs, plan, s, facts, theme, idx, total)
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(slide, theme)
     _head(slide, s, theme, facts)
-    ids = _ids(s)
-    f = facts.get(ids[0]) if ids else None
 
     if f and (f.points or getattr(f, "series", None)):
         png = None

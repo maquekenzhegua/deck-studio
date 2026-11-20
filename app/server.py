@@ -29,7 +29,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app import paths, settings  # noqa: E402
-from deck import agent, compose, compute, edit, ingest, multimodal, render2, verify  # noqa: E402
+from deck import agent, compose, compute, edit, ingest, multimodal, render2, review as reviewmod, verify  # noqa: E402
 from deck.llm import Client, LLMError  # noqa: E402
 from deck.plan import LAYOUTS, Plan, Slide  # noqa: E402
 from deck.visual import THEMES  # noqa: E402
@@ -180,6 +180,16 @@ def reload_bundle(use_model: bool = False) -> None:
         STATE["qa"] = None
 
 
+def review_now() -> dict:
+    """The outline, read the way an editor would read it."""
+    plan = STATE["plan"]
+    if plan is None:
+        return {"findings": [], "summary": ""}
+    found = reviewmod.review(plan, STATE["facts"])
+    return {"findings": [f.as_dict() for f in found],
+            "summary": reviewmod.summary(found)}
+
+
 def snapshot() -> dict:
     with LOCK:
         bundle = STATE["bundle"]
@@ -213,6 +223,7 @@ def snapshot() -> dict:
                 for p in (getattr(bundle, "pictures", []) if bundle else [])
             ],
             "qa": STATE["qa"],
+            "review": review_now(),
             "planner": STATE.get("planner"),
             "settings": settings.public(),
             "meta": list(getattr(bundle, "meta", {}) or {}) if bundle else [],
@@ -360,7 +371,8 @@ def create_app() -> FastAPI:
             STATE["plan"] = plan
             STATE["planner"] = {"who": result.planner, "model": result.model,
                                 "label": result.summary(), "log": result.log}
-        return {"plan": plan_json(plan), "planner": STATE["planner"]}
+        return {"plan": plan_json(plan), "planner": STATE["planner"],
+                "review": review_now()}
 
     @app.post("/api/build")
     def build(body: BuildBody):
@@ -424,6 +436,7 @@ def create_app() -> FastAPI:
             "plan": plan_json(plan),
             "qa": qa,
             "previewError": preview_error,
+            "review": review_now(),
         }
 
     @app.get("/files/{path:path}")
@@ -492,10 +505,18 @@ def create_app() -> FastAPI:
             if plan is None:
                 raise HTTPException(409, "先上传资料")
             facts = STATE.get("facts") or []
-            new_plan, message = edit.apply(plan, body.text)
+            text = body.text
+            if text.strip() in ("按评审意见改", "按评审意见修改", "修评审问题"):
+                findings = reviewmod.review(plan, facts)
+                if not findings:
+                    return {"plan": asdict(plan), "message": "评审没有发现问题，不用改。",
+                            "theme": STATE.get("theme"), "changed": False,
+                            "planner": STATE.get("planner"), "review": review_now()}
+                text = reviewmod.as_prompt(findings)
+            new_plan, message = edit.apply(plan, text)
             client = client_for_model()
             if client is not None and facts:
-                got = agent.revise(plan, facts, body.text, client=client,
+                got = agent.revise(plan, facts, text, client=client,
                                    pictures=(STATE["bundle"].pictures if STATE.get("bundle") else []))
                 if got is not None:
                     new_plan, message = got
@@ -510,7 +531,7 @@ def create_app() -> FastAPI:
             changed = len(new_plan.slides) != len(plan.slides) or new_plan != plan
         return {"plan": asdict(new_plan), "message": message,
                 "theme": STATE.get("theme"), "changed": bool(changed),
-                "planner": STATE.get("planner")}
+                "planner": STATE.get("planner"), "review": review_now()}
 
     @app.post("/api/reveal")
     def reveal():

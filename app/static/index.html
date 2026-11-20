@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deck Studio · 把资料变成一场汇报</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563EB'/%3E%3Ctext x='16' y='23' font-family='Segoe UI' font-size='19' font-weight='800' text-anchor='middle' fill='%23FFFFFF'%3ED%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="/static/theme-light.css?v=4">
+<link rel="stylesheet" href="/static/theme-light.css?v=5">
 </head>
 <body>
 <div class="app">
@@ -138,6 +138,16 @@
   <div class="acts">
     <button class="btn tiny" id="dismissProblems">返回修改</button>
     <button class="btn tiny" id="forceBuild">仍然生成</button>
+  </div>
+</div>
+
+<div class="problems" id="reviewSheet" style="display:none">
+  <h5>评审</h5>
+  <p id="reviewSummary">先说结论，再说证据。</p>
+  <ul id="reviewList"></ul>
+  <div class="acts">
+    <button class="btn tiny" id="reviewClose">知道了</button>
+    <button class="btn tiny primary" id="reviewFix">让模型按意见改</button>
   </div>
 </div>
 
@@ -278,8 +288,11 @@ function renderDeckHead(){
     <span class="chip"><b>${factsUsed.size}</b> 条引用</span>
     <span class="chip">${esc(tw?.name || S.theme)}</span>
     ${S.planner ? `<span class="chip ${S.planner.who === 'model' ? 'ok' : ''}" title="${esc((S.planner.log||[]).join(' · '))}">${esc(S.planner.label || '离线规划')}</span>` : ''}
+    ${S.review && S.review.findings.length ? `<span class="chip ${S.review.findings.some(f=>f.level==='block') ? 'warn' : ''}" id="revChip" title="点击看评审意见">评审 ${S.review.findings.length}</span>` : ''}
     ${S.qa ? `<span class="chip ${S.qa.score >= 90 ? 'ok' : 'warn'}" id="qaChip" title="点击看质量建议">质量 ${S.qa.score}</span>` : ''}
     ${S.pages.length ? `<span class="chip ok">已生成 · ${S.pages.length} 张预览</span>` : '<span class="chip">待生成</span>'}`;
+  const revChip = $('#revChip');
+  if(revChip) revChip.onclick = ()=>openReview();
   const qaChip = $('#qaChip');
   if(qaChip) qaChip.onclick = ()=>{
     const list = (S.qa.issues || []).slice(0, 3);
@@ -433,6 +446,7 @@ function apply(data){
   S.files = data.files || [];
   S.pictures = data.pictures || S.pictures;
   S.qa = data.qa || S.qa;
+  S.review = data.review || S.review;
   if(data.settings){ S.settings = data.settings; paintEngine(data.settings); }
   S.theme = data.theme || S.theme;
   if(data.planner) S.planner = data.planner;
@@ -505,6 +519,8 @@ async function build(force=false, replan=false){
     busy(false); hideProblems();
     S.pages = data.pages; S.pptx = data.pptx; S.plan = data.plan || S.plan; S.theme = data.theme;
     S.qa = data.qa || S.qa;
+    S.review = data.review || S.review;
+  S.review = data.review || S.review;
     renderDeckHead(); renderGrid(); setTab('preview'); renderTrail();
     $('#exportBtn').disabled = !S.pages.length;
     if(data.pages.length) toast(`已生成 <b>${S.pages.length}</b> 页`);
@@ -519,6 +535,39 @@ function showProblems(list){
   $('#forceBuild').onclick = ()=>{ box.style.display='none'; build(true); };
 }
 function hideProblems(){ $('#problems').style.display = 'none'; }
+
+const LEVEL_ZH = {block:'必须改', warn:'建议改', note:'提醒'};
+function openReview(){
+  const r = S.review || {findings:[], summary:''};
+  const box = $('#reviewSheet');
+  box.style.display = 'block';
+  $('#reviewSummary').textContent = r.findings.length
+    ? `${r.summary}。数字之外的问题，先说清楚再动手。`
+    : '没有发现问题：标题是判断、图表有依据、节奏不重复。';
+  $('#reviewList').innerHTML = (r.findings || []).map(f=>{
+    const where = f.page ? `第 ${f.page} 页` : '整份';
+    return `<li><b>${LEVEL_ZH[f.level] || f.level}</b> · ${where} · ${esc(f.text)}</li>`;
+  }).join('');
+  const fix = $('#reviewFix');
+  const modelOn = !!(S.settings && S.settings.text && S.settings.text.model);
+  fix.disabled = !r.findings.length;
+  fix.textContent = modelOn ? '让模型按意见改' : '让规则编辑器试一次';
+  fix.onclick = async ()=>{
+    box.style.display = 'none';
+    busy(true, '按评审意见改', '把意见发给模型，重写受影响的页面…');
+    try{
+      const res = await fetch('/api/edit', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({text:'按评审意见改'})});
+      const d = await res.json();
+      if(!res.ok){ busy(false); toast(d.detail || '改稿失败'); return; }
+      S.plan = d.plan; S.planner = d.planner || S.planner; S.review = d.review || S.review;
+      renderOutline(); renderDeckHead();
+      busy(false); toast(esc(d.message || '已按意见改稿'));
+      await build(true);
+    }catch(e){ busy(false); toast('改稿失败：' + e.message); }
+  };
+}
+$('#reviewClose').onclick = ()=>$('#reviewSheet').style.display='none';
 
 async function applyQuick(){
   const el = $('#quickIn');

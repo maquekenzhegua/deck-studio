@@ -287,7 +287,13 @@ def multiline(series: dict[str, list[tuple[str, float]]], name: str, theme: Them
     fig.patch.set_alpha(0)
     totals = {c: sum(v for _, v in series[c]) for c in cats}
     lead = max(totals, key=totals.get)
-    pad = 0.18
+    # Panels must share one y scale. Per-panel autoscaling draws a 39万 series
+    # as tall as a 143万 one, which quietly contradicts the sentence the slide
+    # is making ("the gap widened"). Same scale, or the comparison is a lie.
+    allv = [v for c in cats for _, v in series[c]]
+    glo, ghi = min(allv), max(allv)
+    gspan = (ghi - glo) or max(abs(ghi) * 0.12, 1.0)
+    lo_y, hi_y = glo - gspan * 0.10, ghi + gspan * 0.18
     for i, cat in enumerate(cats):
         ax = axes[i][0]
         pts = series[cat]
@@ -295,13 +301,11 @@ def multiline(series: dict[str, list[tuple[str, float]]], name: str, theme: Them
         xs = list(range(len(vals)))
         cold = _tint(theme.ink, 0.62, theme.paper)
         color = theme.accent if cat == lead else cold
-        ax.fill_between(xs, 0, vals, color=_tint(color, 0.86, theme.paper), linewidth=0)
+        ax.fill_between(xs, lo_y, vals, color=_tint(color, 0.86, theme.paper), linewidth=0)
         ax.plot(xs, vals, color=color, linewidth=2.4 if cat == lead else 1.8,
                 solid_capstyle="round", zorder=3)
         ax.scatter([xs[-1]], [vals[-1]], s=26, color=color, zorder=4, linewidths=0)
-        lo, hi = min(vals), max(vals)
-        span = (hi - lo) or max(abs(hi) * 0.12, 1.0)
-        ax.set_ylim(lo - span * pad, hi + span * 0.30)
+        ax.set_ylim(lo_y, hi_y)
         ax.set_xlim(-0.35, len(vals) - 0.45)
         for side in ("top", "right", "left", "bottom"):
             ax.spines[side].set_visible(False)
@@ -344,16 +348,27 @@ def heatmap(rows: list[tuple[str, list[float]]], cols: list[str], name: str, the
     fig, ax = _canvas(w, h)
     matrix = np.array([vals for _, vals in rows], dtype=float)
     norm = np.zeros_like(matrix)
+    accent_rgb = np.array(to_rgb(theme.accent))
+    paper_rgb = np.array(to_rgb(theme.paper))
+    neg_rgb = np.array(to_rgb(theme.negative))
+    # A column that crosses zero gets a diverging ramp, not a min-max ramp:
+    # colouring -12% paler than +2% says "small effect" when the sign is the
+    # whole point. Everything else stays a single-hue ramp.
+    diverge = np.zeros(matrix.shape[1], dtype=bool)
     for j in range(matrix.shape[1]):
         col = matrix[:, j]
         lo, hi = float(np.nanmin(col)), float(np.nanmax(col))
-        norm[:, j] = (col - lo) / (hi - lo) if hi > lo else 0.5
-    accent_rgb = np.array(to_rgb(theme.accent))
-    paper_rgb = np.array(to_rgb(theme.paper))
+        if lo < 0:
+            diverge[j] = True
+            scale = max(abs(lo), abs(hi)) or 1.0
+            norm[:, j] = np.abs(col) / scale
+        else:
+            norm[:, j] = (col - lo) / (hi - lo) if hi > lo else 0.5
     for i in range(matrix.shape[0]):
         for j in range(matrix.shape[1]):
             t = 0.10 + 0.78 * norm[i, j]
-            color = tuple(paper_rgb + (accent_rgb - paper_rgb) * t)
+            base = neg_rgb if (diverge[j] and matrix[i, j] < 0) else accent_rgb
+            color = tuple(paper_rgb + (base - paper_rgb) * t)
             ax.add_patch(plt.Rectangle((j + 0.03, i + 0.06), 0.94, 0.88,
                                        facecolor=color, edgecolor="none"))
             dark = norm[i, j] > 0.55
