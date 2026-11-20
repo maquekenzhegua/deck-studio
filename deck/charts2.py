@@ -412,6 +412,79 @@ def _cell(v: float, unit: str) -> str:
 
 
 
+def waterfall(steps: list[tuple[str, float]], name: str, theme: Theme, *,
+              w: float = 8.2, h: float = 4.3, unit: str | None = None) -> str:
+    """Cumulative build: which categories produce the total change.
+
+    A ranked bar chart answers "who is biggest"; this answers "where did the
+    movement come from", which is the question a growth page actually asks.
+    """
+    fig = plt.figure(figsize=(w, h), dpi=200)
+    ax = fig.add_subplot(111)
+    fig.patch.set_alpha(0)
+    ax.set_facecolor("none")
+    for side in ("top", "right", "left"):
+        ax.spines[side].set_visible(False)
+    ax.spines["bottom"].set_color(_tint(theme.ink, 0.72, theme.paper))
+    ax.tick_params(axis="y", length=0, labelsize=12, colors=theme.muted)
+    # A cumulative bridge is read in 万, not in 1e6: the offset text is the
+    # single most "generated" looking thing a matplotlib chart can carry.
+    ax.yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"{v / 10000:.0f}万" if abs(v) >= 10000
+                          else f"{v:,.0f}"))
+    ax.tick_params(axis="x", length=0, labelsize=12, colors=theme.ink2, pad=4)
+    ax.grid(axis="y", color=_tint(theme.ink, 0.86, theme.paper), linewidth=1.0, alpha=.9)
+    ax.set_axisbelow(True)
+
+    run = 0.0
+    xs, labels = [], []
+    for i, (label, delta) in enumerate(steps):
+        bottom = run if delta >= 0 else run + delta
+        color = theme.accent if delta >= 0 else theme.negative
+        ax.bar(i, abs(delta), bottom=bottom, width=0.56, color=color,
+               zorder=3, linewidth=0)
+        top = max(run, run + delta)
+        ax.annotate(("+" if delta > 0 else "−") + _plain(abs(delta), unit),
+                    (i, top), xytext=(0, 6), textcoords="offset points",
+                    ha="center", va="bottom", fontsize=11, color=color)
+        if i:
+            ax.plot([i - 1 + 0.28, i - 0.28], [run, run],
+                    color=_tint(theme.ink, 0.62, theme.paper), linewidth=1.1,
+                    linestyle=(0, (2, 2)), zorder=2)
+        run += delta
+        xs.append(i)
+        labels.append(label)
+    # The total is a bar of its own, in ink: it is the claim, not a category.
+    ax.bar(len(steps), run, width=0.56, color=theme.ink, zorder=3, linewidth=0)
+    ax.annotate(_plain(run, unit), (len(steps), run), xytext=(0, 6),
+                textcoords="offset points", ha="center", va="bottom",
+                fontsize=12, color=theme.ink, fontweight="bold")
+    xs.append(len(steps))
+    labels.append("合计")
+    ax.axhline(0, color=_tint(theme.ink, 0.55, theme.paper), linewidth=1.1, zorder=2)
+
+    ax.set_xticks(xs)
+    ax.set_xticklabels(labels)
+    lo = min(0.0, run)
+    hi = max(run, max((s for _, s in steps), default=0.0))
+    span = (hi - lo) or 1.0
+    ax.set_ylim(lo - span * 0.14, hi + span * 0.20)
+    ax.set_xlim(-0.6, len(steps) + 0.6)
+    fig.tight_layout(pad=0.25)
+    out = _out(name + "-wf")
+    fig.savefig(out, transparent=True)
+    plt.close(fig)
+    return out
+
+
+def _plain(v: float, unit: str | None) -> str:
+    if unit == "ratio":
+        return f"{v * 100:.1f}%"
+    if abs(v) >= 10000:
+        return f"{v / 10000:.0f}万"
+    return f"{v:,.0f}" if abs(v) >= 100 else f"{v:.1f}"
+
+
 def render(fact, name: str, theme: Theme, *, w: float = 8.2, h: float = 4.3) -> str | None:
     if fact.chart == "multiline" and getattr(fact, "series", None):
         return multiline(fact.series, name, theme, w=w, h=h,

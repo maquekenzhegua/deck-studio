@@ -130,6 +130,39 @@ def _val(f: Fact | None, name: str) -> float:
     return 0.0
 
 
+def _waterfall(facts: list[Fact]) -> Slide | None:
+    """Growth, split by who produced it — sales and growth are two facts."""
+    money = next((f for f in facts if f.points and f.unit == "money"
+                  and "区域" in f.label), None)
+    ratio = next((f for f in facts if f.points and f.unit == "ratio"
+                  and "区域" in f.label), None)
+    if not money or not ratio:
+        return None
+    growth = dict(ratio.points)
+    deltas = []
+    for cat, value in money.points:
+        g = growth.get(cat)
+        if g is None or g <= -0.999:
+            continue
+        deltas.append((cat, value - value / (1 + g)))
+    if len(deltas) < 3:
+        return None
+    plus = sum(d for _, d in deltas if d > 0)
+    minus = sum(d for _, d in deltas if d < 0)
+    top = max(deltas, key=lambda kv: kv[1])[0]
+    drag = min(deltas, key=lambda kv: kv[1])[0]
+    if minus < 0 and abs(minus) > plus * 0.25:
+        title = f"增量一半来自{top}，{drag}在往回拽"
+    else:
+        title = f"增量几乎全部来自{top}"
+    return Slide(layout="chart", title=title, fact=f"{money.id},{ratio.id}",
+                 variant="waterfall",
+                 note="把增长拆开看：正贡献集中在少数区域，负贡献在拖后腿。",
+                 bullets=[f"{top}独自贡献了大部分增量",
+                          f"{drag}在往回拽，止血比拉新更急",
+                          "合计增量相当于一个中型区域"])
+
+
 def _pull_quote(bundle) -> tuple[str, str]:
     """A sentence from the user's own documents, with no numbers in it.
 
@@ -192,6 +225,10 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
         if f:
             used.add(f.id)
     duration = _duration(facts, used)
+    # Computed early because it decides whether the plain growth bar still
+    # earns a page: a bridge and a ranking answer the same question, and the
+    # bridge answers it better.
+    water = _waterfall(facts)
 
     top_growth = _top(ratio) if ratio else ""
     neg = _neg(ratio) if ratio else []
@@ -284,7 +321,7 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
                             fact=",".join(f.id for f in picks), note=knote))
 
     # --- structure ----------------------------------------------------------
-    if ratio:
+    if ratio and water is None:
         negs = _neg(ratio)
         if len(negs) == 1:
             title = f"{top_growth}领涨，{negs[0]}是唯一下滑"
@@ -302,6 +339,12 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
         slides.append(Slide(layout="chart", title=title, fact=ratio.id,
                             note="同比看方向，不看绝对规模；正负分界比排名更重要。",
                             bullets=bullets))
+
+    # --- the bridge ---------------------------------------------------------
+    # A growth bar chart says who is up; a bridge says how much each one moved
+    # the total. Same two facts, a different question.
+    if water:
+        slides.append(water)
 
     # --- the mix ------------------------------------------------------------
     # Share is a different question from size: a donut makes "half the revenue
@@ -488,6 +531,15 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
     slides.append(Slide(layout="closing", title=closing_title, note="",
                         bullets=signoff or ["把结论拆到区域", "把动作落到负责人",
                                             "把复盘固定到季度"]))
+
+    # Rhythm pass: a bridge and a split answer the same ratio question and
+    # would otherwise sit as the third chart in a row. Put the comparison
+    # between them so the eye gets a different shape before the next chart.
+    compare_i = next((i for i, sl in enumerate(slides) if sl.layout == "compare"), None)
+    water_i = next((i for i, sl in enumerate(slides) if sl.variant == "waterfall"), None)
+    if compare_i is not None and water_i is not None and compare_i > water_i + 1:
+        item = slides.pop(compare_i)
+        slides.insert(water_i + 1, item)
 
     return Plan(deck_title=deck_title or thesis, subtitle=sub, slides=slides)
 

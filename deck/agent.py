@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from . import compose, verify
+from . import compose, review as reviewmod, verify
 from .compute import Fact
 from .ingest import Bundle
 from .llm import Client, LLMError
@@ -156,6 +156,26 @@ def plan(bundle: Bundle, facts: list[Fact], ask: str = "", *, slides: int = 0,
         return AgentResult(plan=fallback, planner="offline", model=client.model,
                            revisions=used, log=log,
                            problems=[f"第 {p.slide} 页：{p.detail}" for p in blockers][:6])
+    # A model can pass every numeric check and still ship a page whose title is
+    # a number, or four bullets where three would do. Those are editorial, not
+    # arithmetic, so `verify` stays quiet; the review pass is what notices.
+    # Fixing them unasked is the difference between "the model wrote it" and
+    # "the model is minding the deck".
+    findings = [f for f in reviewmod.review(plan_model, facts) if f.level == "block"]
+    if findings:
+        fixed = _repair(client, plan_model, [f"第 {f.page} 页：{f.text}" if f.page else f.text
+                                             for f in findings], facts, bundle, deck_title)
+        if fixed is not None:
+            # The fix is another model draft: it gets the same numeric gate,
+            # not a free pass because it arrived as a "correction".
+            again = [p for p in verify.check(fixed, facts)
+                     if p.kind in ("number", "structure")]
+            if again:
+                log.append("修完之后数字对不上，保留原稿")
+            else:
+                plan_model, issues = fixed, _issues(fixed, facts)
+                log.append(f"自查发现 {len(findings)} 个内容问题，已修")
+
     if issues:
         log.append(f"保留模型稿，{len(issues)} 条版式建议未处理")
 

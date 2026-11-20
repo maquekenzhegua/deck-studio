@@ -38,6 +38,7 @@ class ComposeTest(unittest.TestCase):
         self.assertIn("multi", variants)
         self.assertIn("donut", variants)
         self.assertIn("heatmap", variants)
+        self.assertIn("waterfall", variants)
         self.assertTrue({"chart", "table", "compare"} <= kinds)
         self.assertGreaterEqual(len(kinds), 7, sorted(kinds))
 

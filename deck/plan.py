@@ -315,7 +315,7 @@ def _validate(data: dict, facts: list[Fact], pics: list[Picture],
         fact = raw.get("fact")
         image = raw.get("image")
         variant = str(raw.get("variant") or "").strip()
-        if variant not in ("", "multi", "donut", "heatmap"):
+        if variant not in ("", "multi", "donut", "heatmap", "waterfall"):
             variant = ""
 
         if layout in ("chart", "key_figure", "table", "kpi_row") and fact:

@@ -598,7 +598,11 @@ def chart(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
 
     if f and (f.points or getattr(f, "series", None)):
         png = None
-        if s.variant == "heatmap" and len(ids) > 1:
+        if s.variant == "waterfall" and len(ids) > 1:
+            png = _water_png(ids, facts, f"{idx}", theme)
+            if not png:
+                png = charts2.render(f, f"{idx}", theme, w=8.05, h=4.42)
+        elif s.variant == "heatmap" and len(ids) > 1:
             png = _heat_png(ids, facts, f"{idx}", theme)
         elif s.variant == "donut" and f.points:
             png = charts2.donut(f.points, f"{idx}", theme,
@@ -673,6 +677,33 @@ def _heat_png(ids: list[str], facts: dict[str, Fact], name: str, theme: Theme) -
     cols = [f.column or f.label for f in rows_facts]
     units = [f.unit for f in rows_facts]
     return charts2.heatmap(rows, cols, name, theme, w=8.05, h=4.35, unit=units)
+
+
+def _water_png(ids: list[str], facts: dict[str, Fact], name: str, theme: Theme) -> str | None:
+    """Region sales + region growth -> a contribution bridge.
+
+    Sales and growth are two facts, but "where did the growth come from" is
+    one question. Rebuilding last year's sales from both is arithmetic the
+    renderer is allowed to do: it never leaves the two source facts.
+    """
+    money = next((facts[i] for i in ids if i in facts and facts[i].points
+                  and facts[i].unit == "money"), None)
+    ratio = next((facts[i] for i in ids if i in facts and facts[i].points
+                  and facts[i].unit == "ratio"), None)
+    if money is None or ratio is None:
+        return None
+    growth = dict(ratio.points)
+    steps: list[tuple[str, float]] = []
+    for cat, value in money.points:
+        g = growth.get(cat)
+        if g is None or g <= -0.999:
+            continue
+        prev = value / (1 + g)
+        steps.append((cat, value - prev))
+    if len(steps) < 3:
+        return None
+    steps.sort(key=lambda kv: -abs(kv[1]))
+    return charts2.waterfall(steps[:6], name, theme, w=8.05, h=4.35, unit="money")
 
 
 def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,

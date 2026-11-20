@@ -253,3 +253,30 @@ class PitchTest(unittest.TestCase):
         fake = Fake([{"ideas": []}])
         with self.assertRaises(ValueError):
             agent.pitch(self.bundle, self.facts, client=fake)
+
+
+class SelfReviewTest(unittest.TestCase):
+    """The model should fix its own content-level mistakes, unasked."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.bundle = ingest.load(DATA)
+        cls.facts = compute.extract(cls.bundle)
+
+    def test_a_numeric_title_is_sent_back_and_fixed(self):
+        bad = outline(titles=("2024", "订单比客户多", "明年只做三件事"))
+        good = outline()
+        fake = Fake([bad, good])
+        result = agent.plan(self.bundle, self.facts, client=fake)
+        self.assertEqual(result.planner, "model")
+        self.assertEqual(len(fake.calls), 2)
+        self.assertTrue(any("自查发现" in line for line in result.log))
+        self.assertNotEqual(result.plan.slides[1].title, "2024")
+
+    def test_a_broken_correction_does_not_replace_the_draft(self):
+        bad = outline(titles=("2024", "订单比客户多", "明年只做三件事"))
+        broken = outline(titles=("增长 999%", "订单比客户多", "明年只做三件事"))
+        fake = Fake([bad, broken])
+        result = agent.plan(self.bundle, self.facts, client=fake)
+        self.assertTrue(any("数字对不上" in line for line in result.log))
+        self.assertEqual(result.plan.slides[1].title, "2024")
