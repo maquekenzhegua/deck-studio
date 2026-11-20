@@ -298,7 +298,7 @@ def section(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     # A 300pt numeral clipped by the page edge reads as a printing accident,
     # not a device. Keep it whole, tucked against the right margin.
     add_text(slide, Inches(8.15), Inches(0.52), Inches(4.75), Inches(4.6),
-             num, theme, size=Pt(264), color=_mix(theme.dark, "#FFFFFF", 0.085),
+             num, theme, size=Pt(264), color=_mix(theme.dark, theme.accent, 0.30),
              bold=True, align="left", font="headline", wrap=False)
 
     add_text(slide, MARGIN_X, Inches(2.02), Inches(6.2), Inches(0.26),

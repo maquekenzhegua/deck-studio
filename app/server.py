@@ -67,10 +67,18 @@ THEME_COPY = {
 
 # ---------------------------------------------------------------- serialisation
 
+def _human(label: str) -> str:
+    """Fact labels are built for code ("销售额 按 区域（求和）"). The rail is read
+    by a person, so drop the pivot grammar and the aggregate hint."""
+    text = re.sub(r"\s*按\s*", " · ", label or "")
+    text = re.sub(r"（(求和|均值|合计|最大|最小|计数)）$", "", text)
+    return text.strip()
+
+
 def fact_json(f) -> dict:
     return {
         "id": f.id,
-        "label": f.label,
+        "label": _human(f.label),
         "value": f.value,
         "raw": f.raw,
         "unit": f.unit,
