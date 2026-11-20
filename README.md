@@ -134,6 +134,16 @@ DECK_HEADLESS=1 DECK_PORT=8799 "dist/Deck Studio/Deck Studio.exe"
 curl -s http://127.0.0.1:8799/health
 ```
 
+## 验收
+
+一条命令，从一份空工作区走到一套成稿（上传 7 个文件 → 24 条事实 → 15 页 → 导出 PDF）：
+
+```bash
+python tools/accept.py
+```
+
+最近一次输出与说明见 [docs/acceptance.md](docs/acceptance.md)：9 项检查全过、质量分 100、数字问题 0。
+
 ## 测试
 
 ```bash
