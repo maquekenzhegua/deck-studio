@@ -24,6 +24,7 @@ check, so it has to be produced by counting what actually happened.
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 
 from . import compose, review as reviewmod, verify
@@ -112,6 +113,7 @@ def plan(bundle: Bundle, facts: list[Fact], ask: str = "", *, slides: int = 0,
         return AgentResult(plan=fallback, planner="offline", log=["未配置模型，使用离线规划"])
 
     want = slides or min(7, 6 + len(facts) // 12)
+    started = time.monotonic()
     log: list[str] = []
     plan_model = None
     # A slow or reasoning-heavy model can run out of socket before it finishes
@@ -168,7 +170,12 @@ def plan(bundle: Bundle, facts: list[Fact], ask: str = "", *, slides: int = 0,
     # Fixing them unasked is the difference between "the model wrote it" and
     # "the model is minding the deck".
     findings = [f for f in reviewmod.review(plan_model, facts) if f.level == "block"]
-    if findings:
+    # A repair is a second full outline. On a slow endpoint that turns a
+    # six-minute wait into twelve, and the person at the screen has already
+    # decided the app hung. Past this budget, ship the draft and say so.
+    if findings and time.monotonic() - started > 240:
+        log.append(f"首次出稿用了 {int(time.monotonic() - started)} 秒，跳过自查修订")
+    elif findings:
         fixed = _repair(client, plan_model, [f"第 {f.page} 页：{f.text}" if f.page else f.text
                                              for f in findings], facts, bundle, deck_title)
         if fixed is not None:

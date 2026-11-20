@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deck Studio · 把资料变成一场汇报</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563EB'/%3E%3Ctext x='16' y='23' font-family='Segoe UI' font-size='19' font-weight='800' text-anchor='middle' fill='%23FFFFFF'%3ED%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="/static/theme-light.css?v=10">
+<link rel="stylesheet" href="/static/theme-light.css?v=11">
 </head>
 <body>
 <div class="app">
@@ -24,6 +24,7 @@
     <div class="top-note"><span class="dot"></span><span id="engine">本地渲染 · 无需联网</span></div>
     <button class="btn ghost" id="ideaBtn" title="让模型先提出三个叙事角度">提三个角度</button>
     <button class="btn ghost" id="setBtn" title="接入文本/视觉模型（可选）">模型</button>
+    <button class="btn ghost" id="replanBtn" hidden title="让模型重新排一遍页序（比较慢）">重排</button>
     <button class="btn primary" id="buildBtn" disabled>生成演示 <span style="font-size:10px;opacity:.6">Ctrl ↵</span></button>
   </header>
 
@@ -226,7 +227,8 @@
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => [...r.querySelectorAll(s)];
 const LAYOUT_OPTS = [['title','封面'],['section','章节'],['chart','图表'],['kpi_row','关键数'],['key_figure','单个数字'],['table','表格'],['bullets','要点'],['notes','原文摘录'],['quote','引语'],['compare','对比'],['split_image','图文'],['image_full','全幅图'],['closing','收尾']];
-const S = { plan:null, facts:[], files:[], pictures:[], qa:null, planner:null, settings:null, theme:'navy', pages:[], tab:'outline', lb:0, meta:null, lastExport:'', pptx:null };
+const S = { plan:null, facts:[], files:[], pictures:[], qa:null, planner:null, settings:null, theme:'navy', pages:[], tab:'outline', lb:0, meta:null, lastExport:'', pptx:null, brief:'' };
+function modelOn(){ return !!(S.settings && S.settings.text && S.settings.text.model); }
 
 function toast(msg, action, fn){
   const t = $('#toast');
@@ -486,6 +488,7 @@ function apply(data){
   else { setTab('outline'); }
   renderTrail();
   $('#buildBtn').disabled = !(S.facts.length && S.plan?.slides?.length);
+  $('#replanBtn').hidden = !modelOn();
   $('#exportBtn').disabled = !S.pages.length;
 }
 
@@ -770,6 +773,9 @@ async function openIdeas(){
 async function pickIdea(idea){
   $('#ideaSheet').style.display = 'none';
   S.idea = idea;
+  // Remember why this deck exists: 重排 must send the same angle, or the
+  // model gets a title with no argument behind it.
+  S.brief = `${idea.angle} ${idea.why}`;
   if(S.plan) S.plan.deck_title = idea.title;
   busy(true, '按这个角度重排', idea.title);
   try{
@@ -794,7 +800,10 @@ $('#pick').onclick = e=>{ e.stopPropagation(); $('#fileInput').click(); };
 $('#fileInput').onchange = e=>upload(e.target.files);
 $('#sampleBtn').onclick = e=>{ e.stopPropagation(); loadSample(); };
 $('#emptySample').onclick = loadSample;
-$('#buildBtn').onclick = ()=>build(false, true);
+// 生成 is a render; 重排 is a model re-plan. Wiring both to the slow path made
+// every click a four-minute wait, which reads as a hang.
+$('#buildBtn').onclick = ()=>build(false, !S.pages.length && modelOn());
+$('#replanBtn').onclick = ()=>build(false, true);
 $('#quickGo').onclick = applyQuick;
 $('#quickIn').onkeydown = e=>{ if(e.key === 'Enter'){ e.preventDefault(); applyQuick(); } };
 $('#exportBtn').onclick = e=>{ e.stopPropagation(); $('#expMenu').classList.toggle('on'); };
