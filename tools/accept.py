@@ -19,8 +19,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 HOME = ROOT / "out" / "acceptance"
-EXE = Path(os.environ.get("DECK_EXE") or
-           ROOT / "dist-v23" / "Deck Studio" / "Deck Studio.exe")
+def _newest_build() -> Path:
+    """The build a person would click: the most recent one, not a pinned path."""
+    builds = sorted(ROOT.glob("dist*/Deck Studio/Deck Studio.exe"),
+                    key=lambda p: p.stat().st_mtime, reverse=True)
+    return builds[0] if builds else ROOT / "dist" / "Deck Studio" / "Deck Studio.exe"
+
+
+EXE = Path(os.environ.get("DECK_EXE") or _newest_build())
 SAMPLES = ROOT / "samples" / "data"
 
 
