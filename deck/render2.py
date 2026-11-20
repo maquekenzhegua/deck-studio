@@ -364,6 +364,13 @@ def section(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                 add_text(slide, MARGIN_X + Inches(0.60), Inches(yy - 0.02),
                          Inches(5.95), Inches(0.32), label, theme, size=Pt(11.5),
                          color=_rgb(theme.dark_ink), line_spacing=1.2)
+            # An agenda that quietly stops at five items implies the chapter
+            # is five pages long. Say how many pages the reader is in for.
+            rest = len(plan.slides) - idx - len(upcoming)
+            tail = f"…  共 {len(plan.slides)} 页" if rest > 0 else f"共 {len(plan.slides)} 页"
+            add_text(slide, MARGIN_X + Inches(0.60),
+                     Inches(5.32 + len(upcoming) * 0.36), Inches(5.9), Inches(0.26),
+                     tail, theme, size=Pt(9), color=_rgb(theme.dark_muted))
             page_number(slide, idx, theme)
             return
     if len(secs) > 1:
@@ -464,11 +471,25 @@ def statement(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
             denom = sum(abs(v) for _, v in f.points) or 1
             number = _point_number(top[1], f.unit)
             label = _clean_label(f.label)
-            share = abs(top[1]) / denom
-            extra = f"{top[0]}占 {share * 100:.0f}%"
-            if len(ranked) > 1 and ranked[1][1]:
-                extra += f"，比第二名高 {(abs(top[1]) / abs(ranked[1][1]) - 1) * 100:.0f}%"
-            sub = "  ·  ".join(f"{n} {_short(v, f.unit)}" for n, v in ranked[1:4])
+            if f.unit == "ratio":
+                # "华东占 41%" is only meaningful for a size that adds up.
+                # A growth rate does not: 34% of the sum of |growth| is a
+                # number with no unit. Rank by value here, not by magnitude:
+                # -12% is the floor even though +2% is the smaller number.
+                by_val = sorted(f.points, key=lambda kv: -kv[1])
+                top = by_val[0]
+                number = _point_number(top[1], f.unit)
+                extra = f"{top[0]}最高  ·  {by_val[-1][0]}最低"
+                tail = list(by_val[1:3])
+                if by_val[-1] not in tail:
+                    tail.append(by_val[-1])
+                sub = "  ·  ".join(f"{n} {_short(v, f.unit)}" for n, v in tail)
+            else:
+                share = abs(top[1]) / denom
+                extra = f"{top[0]}占 {share * 100:.0f}%"
+                if len(ranked) > 1 and ranked[1][1]:
+                    extra += f"，比第二名高 {(abs(top[1]) / abs(ranked[1][1]) - 1) * 100:.0f}%"
+                sub = "  ·  ".join(f"{n} {_short(v, f.unit)}" for n, v in ranked[1:4])
         size = _fit(number, Inches(4.65), Inches(1.55), 92, 54, 1.0)
         # A hero number must never wrap: PowerPoint will happily break between
         # "977.2" and "万", which drops a lone 万 onto the label below.
@@ -865,10 +886,21 @@ def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     # one, name the widest drop — still without inventing a number.
     reading = subst(s.note, facts) if s.note else ""
     if not reading and len(pts) >= 2:
-        drops = [(pts[i][0], pts[i + 1][0], pts[i][1] - pts[i + 1][1])
-                 for i in range(len(pts) - 1)]
-        a, b, _ = max(drops, key=lambda t: t[2])
-        reading = f"从{a}到{b}收窄最多，{pts[-1][0]}是最低一环。"
+        if f.chart == "funnel":
+            drops = [(pts[i][0], pts[i + 1][0], pts[i][1] - pts[i + 1][1])
+                     for i in range(len(pts) - 1)]
+            a, b, _ = max(drops, key=lambda t: t[2])
+            reading = f"从{a}到{b}收窄最多，{pts[-1][0]}是最低一环。"
+        else:
+            # A ranked list is not a funnel: nothing "narrows". Say what the
+            # list actually shows — the spread between the ends.
+            hi, lo = pts[0], pts[-1]
+            if lo[1] > 0 and hi[1] > 0:
+                ratio = hi[1] / lo[1]
+                reading = (f"{hi[0]}最高，{lo[0]}最低，首尾相差 {ratio:.1f} 倍。"
+                           if ratio >= 1.05 else f"{hi[0]}与{lo[0]}几乎持平。")
+            else:
+                reading = f"{hi[0]}最高，{lo[0]}最低。"
     if reading:
         band_top = y + Inches(0.30)
         if float(band_top) > float(Inches(6.86)) - float(Inches(0.92)):
@@ -1054,10 +1086,15 @@ def split_image(prs, plan: Plan, s: Slide, facts: dict[str, Fact],
     path = p.path if p else None
     flat = bool(path) and image_is_flat(path)
 
+    # A flat document is a reproduction, not a scene: the kicker should not
+    # say "现场" over a bar chart. And when compose already put "原始材料：" in
+    # the title, the kicker carries it so the title can be the object itself.
     add_text(slide, MARGIN_X, Inches(0.52), Inches(5.2), Inches(0.26),
-             "现场", theme, size=Pt(9.5), color=_rgb(theme.accent),
-             bold=True, spacing=2.6)
+             "原始材料" if flat else "现场", theme, size=Pt(9.5),
+             color=_rgb(theme.accent), bold=True, spacing=2.6)
     title = subst(s.title, facts)
+    if flat and title.startswith("原始材料："):
+        title = title.split("：", 1)[1]
     size = _fit(title, Inches(5.35), Inches(2.15), 31, 21, 1.12)
     title = _wrap_clauses(title, Inches(5.35), size.pt)
     lines = title.count("\n") + 1
@@ -1124,7 +1161,7 @@ def split_image(prs, plan: Plan, s: Slide, facts: dict[str, Fact],
         # Follow the copy, but never crowd it: the passport block sits under
         # the note when there is room, and rides the foot of the column when
         # the copy runs long.
-        my = max(3.62, min(5.55, y + 0.62))
+        my = min(4.98, max(3.30, y + 0.55))
         add_rect(slide, MARGIN_X, Inches(my - 0.18), Inches(5.30), Emu(9525),
                  _rgb(theme.hair))
         for label, value in rows:
@@ -1388,6 +1425,12 @@ def build(plan: Plan, facts: list[Fact], pictures: list[Picture], out: str,
     pmap = {p.id: p for p in pictures}
     th = get_theme(theme)
     prs = Presentation()
+    # Metadata travels with the file: after it leaves the app, the title and
+    # author are the only context a reader has in Explorer or a mail preview.
+    prs.core_properties.title = plan.deck_title
+    prs.core_properties.subject = plan.subtitle or "经营复盘"
+    prs.core_properties.author = "Deck Studio"
+    prs.core_properties.comments = "由 Deck Studio 生成；数字来自原始材料，逐项校验。"
     prs.slide_width = SLIDE_W
     prs.slide_height = SLIDE_H
     total = len(plan.slides)

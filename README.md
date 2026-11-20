@@ -8,7 +8,7 @@
 
 不是一个套模板的「一键生成」。它先把你手上的材料读懂、算清楚，再按一套从 19 份真实 deck（1144 页）里量出来的设计规范排版；模型可以主导论证，但**任何一个数字都必须能指回原始表格**。
 
-> **下载即用**：[Deck Studio 0.6.0 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
+> **下载即用**：[Deck Studio 0.6.2 · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest) — 解压后双击 `Deck Studio.exe`，不需要装 Python。没有 Office 也能预览（内置 LibreOffice 无头转换）。
 
 ![Deck Studio](docs/app-window.png)
 
@@ -43,6 +43,7 @@
 ## 两条入口
 
 **桌面版（推荐）**——双击 `Deck Studio.exe`，左边拖文件，中间改标题和顺序，右边看渲染结果。
+工具栏最左边的「页数」决定模型排页序的深度：自动按资料量估算，也可以钉死 6 / 9 / 12 页。
 
 ```bash
 python run_app.py            # 源码启动（Win10/11 自带 WebView2）
@@ -72,7 +73,7 @@ python -m deck.cli audit  out/deck.pptx                # 设计规则体检
 - 环境变量 `DECK_BASE_URL / DECK_API_KEY / DECK_MODEL`、`DECK_VISION_*` 优先级更高，方便 CI 或临时覆盖。
 - 测试连接会真发一次 `max_tokens=1` 的请求；401/404 原样报给你，不会假装成功。
 
-模型主导是怎么运作的（`deck/agent.py`）：
+模型主导是怎么运作的（`deck/agent.py`，细节见 [docs/model-led.md](docs/model-led.md)）：
 
 0. **先提角度**：右上「提三个角度」→ `POST /api/ideas`，模型读事实清单，给三个不同叙事角度，每个注明靠哪几条事实站得住；选一个，整份大纲按它重排。同一个材料可以讲成不同的故事，这一步把选择权交回给人。
 

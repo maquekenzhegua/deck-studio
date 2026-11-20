@@ -24,3 +24,11 @@ build-v2/
 
 # generated reference sheets
 corpus/refs/
+
+# local run artefacts
+nohup.out
+out/
+
+# build artefacts (never commit a 230 MB folder)
+dist-*/
+build-*/

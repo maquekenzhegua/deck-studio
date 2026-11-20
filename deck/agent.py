@@ -112,7 +112,7 @@ def plan(bundle: Bundle, facts: list[Fact], ask: str = "", *, slides: int = 0,
     if client is None:
         return AgentResult(plan=fallback, planner="offline", log=["未配置模型，使用离线规划"])
 
-    want = slides or min(9, 6 + len(facts) // 10)
+    want = slides or min(7, 6 + len(facts) // 10)
     started = time.monotonic()
     log: list[str] = []
     plan_model = None

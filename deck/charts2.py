@@ -367,9 +367,13 @@ def heatmap(rows: list[tuple[str, list[float]]], cols: list[str], name: str, the
         col = matrix[:, j]
         lo, hi = float(np.nanmin(col)), float(np.nanmax(col))
         if lo < 0:
+            # Normalise each sign against its own side. Sharing one scale with
+            # +34% made -12% look like a rounding error; the whole point of the
+            # column is that the two signs are different stories.
             diverge[j] = True
-            scale = max(abs(lo), abs(hi)) or 1.0
-            norm[:, j] = np.abs(col) / scale
+            pos = max([v for v in col if v > 0], default=0.0) or 1.0
+            neg = abs(min([v for v in col if v < 0], default=0.0)) or 1.0
+            norm[:, j] = [abs(v) / (neg if v < 0 else pos) for v in col]
         else:
             norm[:, j] = (col - lo) / (hi - lo) if hi > lo else 0.5
     for i in range(matrix.shape[0]):
