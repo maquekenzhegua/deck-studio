@@ -383,8 +383,13 @@ def heatmap(rows: list[tuple[str, list[float]]], cols: list[str], name: str, the
             # "almost nothing", the sign is the finding.
             if diverge[j]:
                 t = 0.14 + 0.64 * float(norm[i, j]) ** 0.9
+            elif units[j] in ("count", "raw"):
+                # A neutral column needs a floor: the smallest count used to be
+                # 8% ink on paper, which reads as a blank cell rather than as a
+                # low number.
+                t = 0.32 + 0.50 * float(norm[i, j])
             else:
-                t = 0.08 + 0.76 * norm[i, j] ** 1.15
+                t = 0.10 + 0.72 * norm[i, j] ** 1.1
             # Three metrics, three visual languages: money in the brand ramp,
             # growth diverging, a plain count in neutral ink. Painting every
             # column in accent made the grid look like one metric repeated.
