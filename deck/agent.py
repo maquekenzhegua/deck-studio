@@ -91,6 +91,41 @@ def _skeleton(plan: Plan) -> tuple[Plan, list[str]]:
     return replace(plan, slides=slides), log
 
 
+def _enrich(plan: Plan, bundle, facts: dict[str, Fact]) -> tuple[Plan, list[str]]:
+    """The model reads numbers and forgets the things that aren't numbers.
+
+    A deck built from a folder of photos that never shows one, or from a
+    memo whose best sentence is never quoted, is a deck that ignored half its
+    input. Both pages are deterministic, so the program adds them.
+    """
+    log: list[str] = []
+    slides = list(plan.slides)
+    layouts = {s.layout for s in slides}
+    pictures = getattr(bundle, "pictures", []) or []
+    if pictures and not ({"image_full", "split_image"} & layouts):
+        shot = next((p for p in pictures if p.kind in ("chart", "page", "screenshot")),
+                    next((p for p in pictures if p.kind == "photo"), pictures[0]))
+        title = compose._stem(getattr(shot, "name", "") or "材料")
+        layout = "image_full" if getattr(shot, "kind", "") == "photo" else "split_image"
+        page = Slide(layout=layout, title=f"原始材料：{title}",
+                     image=getattr(shot, "id", "") or "",
+                     note="用户提供的材料，原样保留，不做二次加工。")
+        if slides and slides[-1].layout == "closing":
+            slides.insert(len(slides) - 1, page)
+        else:
+            slides.append(page)
+        log.append("模型没用上你传的图，补一页原始材料")
+    quote_text, quote_from = compose._pull_quote(bundle)
+    if quote_text and not ({"quote", "notes"} & layouts):
+        page = Slide(layout="quote", title=quote_text, note=f"—— {quote_from}")
+        if slides and slides[-1].layout == "closing":
+            slides.insert(len(slides) - 1, page)
+        else:
+            slides.append(page)
+        log.append("模型没用上文档里的原话，补一页引用")
+    return replace(plan, slides=slides), log
+
+
 def _issues(plan: Plan, facts: list[Fact]) -> list[str]:
     out = [f"第 {p.slide} 页：{p.detail}" for p in verify.check(plan, facts)]
     layouts = [s.layout for s in plan.slides]
@@ -242,6 +277,8 @@ def plan(bundle: Bundle, facts: list[Fact], ask: str = "", *, slides: int = 0,
     log.extend(trimmed)
     plan_model, shaped = _skeleton(plan_model)
     log.extend(shaped)
+    plan_model, filled = _enrich(plan_model, bundle, facts)
+    log.extend(filled)
 
     if issues:
         log.append(f"保留模型稿，{len(issues)} 条版式建议未处理")

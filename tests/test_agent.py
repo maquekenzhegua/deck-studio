@@ -381,3 +381,33 @@ class SkeletonTest(unittest.TestCase):
         out, log = _skeleton(Plan(deck_title="t", subtitle="s", slides=slides))
         self.assertEqual([s.layout for s in out.slides], ["title", "bullets", "closing"])
         self.assertEqual(log, [])
+
+
+class EnrichTest(unittest.TestCase):
+    def _bundle(self, pictures=(), docs=()):
+        import types
+        return types.SimpleNamespace(pictures=list(pictures), docs=list(docs))
+
+    def test_a_photo_the_model_ignored_gets_a_page(self):
+        from deck.agent import _enrich
+        from deck.plan import Plan, Slide
+        from deck.ingest import Picture
+        shot = Picture(id="p1", name="现场照片.jpg", path="x.jpg", width=1600, height=900, kind="photo")
+        plan = Plan(deck_title="t", subtitle="s", slides=[
+            Slide(layout="title", title="结论"),
+            Slide(layout="closing", title="收尾")])
+        out, log = _enrich(plan, self._bundle(pictures=[shot]), {})
+        self.assertEqual([s.layout for s in out.slides], ["title", "image_full", "closing"])
+        self.assertTrue(any("图" in line for line in log))
+
+    def test_a_memo_sentence_gets_a_quote(self):
+        from deck.agent import _enrich
+        from deck.plan import Plan, Slide
+        from deck.ingest import Doc
+        doc = Doc(name="经营小结.docx", source="经营小结.docx",
+                  text="客户不是不愿意付钱，是我们没有把价值讲清楚。第二句也在这里。")
+        plan = Plan(deck_title="t", subtitle="s", slides=[Slide(layout="title", title="结论")])
+        out, log = _enrich(plan, self._bundle(docs=[doc]), {})
+        self.assertEqual(out.slides[-1].layout, "quote")
+        self.assertTrue(out.slides[-1].note.startswith("——"))
+        self.assertTrue(any("引用" in line for line in log))

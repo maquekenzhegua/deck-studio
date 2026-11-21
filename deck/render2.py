@@ -207,6 +207,16 @@ def _wrap_clauses(text: str, width, size_pt: float) -> str:
             cur = cand
     if cur:
         lines.append(cur)
+    # A line must not end on an enumerator: "华北、" hanging at the right edge
+    # splits a pair the reader has to reassemble. Move the trailing item down.
+    for i in range(len(lines) - 1):
+        head = lines[i]
+        if not head.rstrip().endswith("、"):
+            continue
+        cut = max(head.rfind("，"), head.rfind("。"), head.rfind("："))
+        if 0 < cut < len(head) - 1:
+            lines[i] = head[:cut + 1]
+            lines[i + 1] = head[cut + 1:] + lines[i + 1]
     out: list[str] = []
     for line in lines:
         if text_width_pt(line, size_pt) <= limit:
@@ -783,6 +793,8 @@ def chart(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                  bold=True, spacing=0.8)
         body = subst(text, facts)
         size = _fit(body, Inches(2.52), Inches(0.92), 14.5, 11.5, 1.35)
+        # A reading that ends on one character ("第 / 二") reads as a typo.
+        body, size = _wrap_nice(body, Inches(2.52), size, 11.0)
         add_text(slide, Inches(9.72), Inches(y - 0.10), Inches(2.52), Inches(0.96),
                  body, theme, size=size, color=_rgb(theme.ink), line_spacing=1.35)
         y += 1.06
