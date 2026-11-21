@@ -269,3 +269,27 @@ class OfflineIdeasTest(unittest.TestCase):
         self.assertEqual(len(body["ideas"]), 3)
         for idea in body["ideas"]:
             self.assertTrue(idea["title"])
+
+
+class DropFileTest(unittest.TestCase):
+    """A workspace you cannot edit is not a workspace."""
+
+    def test_removing_one_file_recomputes_the_rest(self):
+        from app import server as srv
+        c = TestClient(srv.app)
+        c.post("/api/sample")
+        before = c.get("/api/state").json()
+        name = next(f["name"] for f in before["files"] if f["ext"] == "png")
+        r = c.delete(f"/api/file/{name}")
+        self.assertEqual(r.status_code, 200)
+        after = r.json()
+        self.assertEqual(after["removed"], name)
+        self.assertNotIn(name, [f["name"] for f in after["files"]])
+        self.assertTrue(all(f["name"] != name for f in after["files"]))
+        self.assertEqual(len(after["pictures"]), len(before["pictures"]) - 1)
+
+    def test_a_name_outside_the_workspace_is_refused(self):
+        from app import server as srv
+        c = TestClient(srv.app)
+        r = c.delete("/api/file/..%2Fsettings.json")
+        self.assertEqual(r.status_code, 404)

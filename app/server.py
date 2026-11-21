@@ -467,6 +467,26 @@ def create_app() -> FastAPI:
         body["skipped"] = [n for n in saved if n not in used]
         return body
 
+    @app.delete("/api/file/{name}")
+    def drop_file(name: str):
+        """Remove one upload and rebuild what the deck knows from the rest.
+
+        Without this the only way to un-include a wrong file is to start over;
+        a workspace you cannot edit is not a workspace.
+        """
+        safe = Path(name).name
+        target = UPLOADS / safe
+        if target.parent != UPLOADS or not target.exists():
+            raise HTTPException(404, "这个文件不在工作区里")
+        try:
+            target.unlink()
+        except OSError as exc:
+            raise HTTPException(500, f"删不掉：{exc}") from exc
+        reload_bundle()
+        with LOCK:
+            STATE["pages"], STATE["pptx"], STATE["qa"] = [], None, None
+        return {"removed": safe, **snapshot()}
+
     @app.post("/api/sample")
     def sample():
         sample_dir = paths.resource("samples", "data")
@@ -567,7 +587,10 @@ def create_app() -> FastAPI:
             return JSONResponse({"problems": problems}, status_code=422)
 
         stamp = time.strftime("%Y%m%d-%H%M%S")
-        pptx = OUT / f"deck-{stamp}.pptx"
+        # A file called deck-20261121-180000.pptx tells you nothing in a folder
+        # of exports; the deck's own title does.
+        slug = re.sub(r"[^\w\u4e00-\u9fa5]+", "-", plan.deck_title or "").strip("-")[:36]
+        pptx = OUT / f"{slug or 'deck'}-{time.strftime('%H%M')}.pptx"
         try:
             render2.build(plan, facts, pictures, str(pptx), theme=theme)
         except Exception as exc:  # noqa: BLE001
