@@ -160,7 +160,7 @@ def _waterfall(facts: list[Fact]) -> Slide | None:
                  note="把增长拆开看：正贡献集中在少数区域，负贡献在拖后腿。",
                  bullets=[f"{top}独自贡献了大部分增量",
                           f"{drag}在往回拽，止血比拉新更急",
-                          "合计增量相当于一个中型区域"])
+                          f"{drag}的下滑，被{top}一区盖过"])
 
 
 def _pull_quote(bundle) -> tuple[str, str]:
