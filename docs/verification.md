@@ -14,18 +14,18 @@ python -m venv .venv
 ./.venv/Scripts/python tools/qa.py out/deck.pptx --png out/png
 ```
 
-最近一次结果（commit `ca6a352`）：
+最近一次结果（commit `94f5968`，2026-11-21 19:12）：
 
 | 检查 | 结果 |
 | --- | --- |
 | 依赖安装 | `PIP=0`，五个关键包 import 通过 |
-| 离线测试 | `Ran 239 tests … OK`（29.6s） |
+| 离线测试 | `Ran 246 tests … OK`（31.3s） |
 | 样例出稿 | 16 页 |
 | 质量分 | 100，`数字问题 0 处` |
 
 ## 2. 国产/通用模型预设
 
-`app/settings.py:PRESETS` 共 10 家：deepseek、dashscope（通义）、zhipu（智谱）、moonshot、doubao（豆包）、baichuan（百川）、minimax、siliconflow、openai、ollama（本机）。
+`app/settings.py:PRESETS` 共 11 家：opencode（OpenCode Go，置顶）、deepseek、dashscope（通义）、zhipu（智谱）、moonshot、doubao（豆包）、baichuan（百川）、minimax、siliconflow、openai、ollama（本机）。
 
 ```bash
 python -c "from app.settings import PRESETS; print(len(PRESETS), sorted(PRESETS))"

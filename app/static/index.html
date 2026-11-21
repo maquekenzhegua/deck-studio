@@ -151,7 +151,7 @@
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <div class="problems" id="problems" style="display:none">
   <h5>有 0 处需要你看一眼</h5>
@@ -163,7 +163,7 @@
   </div>
 </div>
 
-<div class="problems" id="reviewSheet" style="display:none">
+<div class="problems" id="reviewSheet" role="dialog" aria-modal="true" aria-label="评审意见" style="display:none">
   <h5>评审</h5>
   <p id="reviewSummary">先说结论，再说证据。</p>
   <ul id="reviewList"></ul>
@@ -173,7 +173,7 @@
   </div>
 </div>
 
-<div class="settings" id="ideaSheet" style="display:none">
+<div class="settings" id="ideaSheet" role="dialog" aria-modal="true" aria-label="三个角度" style="display:none">
   <div class="sheet">
     <div class="sheet-head">
       <div>
@@ -197,7 +197,7 @@
   </div>
 </div>
 
-<div class="problems" id="readySheet" style="display:none">
+<div class="problems" id="readySheet" role="dialog" aria-modal="true" aria-label="资料体检" style="display:none">
   <h5>资料体检</h5>
   <p id="readySummary">先看材料能撑起哪些论证。</p>
   <ul id="readyList"></ul>
@@ -206,7 +206,7 @@
   </div>
 </div>
 
-<div class="settings" id="settings">
+<div class="settings" id="settings" role="dialog" aria-modal="true" aria-label="模型设置">
   <div class="sheet">
     <div class="sheet-head">
       <div>
@@ -247,7 +247,7 @@
   </div>
 </div>
 
-<div class="lightbox" id="lightbox">
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="页面预览">
   <button class="close" id="lbClose">×</button>
   <button class="nav prev" id="lbPrev">‹</button>
   <img id="lbImg" alt="">
