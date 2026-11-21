@@ -465,7 +465,9 @@ def waterfall(steps: list[tuple[str, float]], name: str, theme: Theme, *,
     run = 0.0
     xs, labels = [], []
     span = max((abs(v) for _, v in steps), default=1.0) or 1.0
-    floor_h = span * 0.012  # a 2% drag must still be a bar, not a hairline
+    # A 2% drag must still read as a bar, not a hairline; 1.2% of the span was
+    # thin enough that the step looked broken at presentation size.
+    floor_h = span * 0.022
     for i, (label, delta) in enumerate(steps):
         height = max(abs(delta), floor_h)
         bottom = run if delta >= 0 else run - height
@@ -473,7 +475,9 @@ def waterfall(steps: list[tuple[str, float]], name: str, theme: Theme, *,
         ax.bar(i, height, bottom=bottom, width=0.56, color=color,
                zorder=3, linewidth=0)
         if delta >= 0:
-            anchor, offset, va = run + height, 6, "bottom"
+            # A short step gets its label lifted clear of the dashed total line.
+            lift = 13 if abs(delta) < span * 0.05 else 6
+            anchor, offset, va = run + height, lift, "bottom"
         else:
             # Below the drop, clear of both the bar and the running total.
             anchor, offset, va = bottom, -10, "top"
