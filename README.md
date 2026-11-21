@@ -169,6 +169,10 @@ python tools/accept.py
 
 最近一次输出与说明见 [docs/acceptance.md](docs/acceptance.md)：9 项检查全过、质量分 100、数字问题 0。
 
+## 验证
+
+可复跑的检查（干净 clone、模型预设、多模态、安装包）都记在 [docs/verification.md](docs/verification.md)，不写主观评价。
+
 ## 测试
 
 ```bash
