@@ -102,6 +102,11 @@
 ## 0.1.0
 
 - 第一个可用版本：拖文件 → 抽事实 → 排版 → 预览 → 导出 PPTX / PDF / PNG
+## 0.10.4
+- 「提三个角度」不再要求 API：没接模型时从数字里读出三条（增长集中度 / 漏斗瓶颈 / 结构失衡），选一条封面就改。
+- 封面装饰圆环移出标题区，长标题不再被弧线穿过。
+- 表格只显示前 8 行时，来源行注明「共 N 项，按大小取前 8」。
+
 ## 0.10.3
 - 模型面板新增 OpenCode Go 预设并排第一：`https://opencode.ai/inference/go/v1`，默认 `mimo-v2.6-flash`，可读图
 - 网关兼容：补 `x-opencode-session`（缺了会 400 MissingSessionID）、显式 UA（urllib 默认 UA 会被 Cloudflare 403/1010）

@@ -178,7 +178,8 @@
     <div class="sheet-head">
       <div>
         <h3>三个角度</h3>
-        <p>同一个材料可以讲成不同的故事。选一个，模型按它重排整份大纲。</p>
+        <p>同一个材料可以讲成不同的故事。选一个，按它重排整份大纲。</p>
+        <p class="idea-hint" id="ideaHint"></p>
       </div>
       <button class="btn tiny ghost" id="ideaClose">关闭</button>
     </div>
@@ -221,7 +222,7 @@
         <div class="presets" id="presets"></div>
         <label>接口地址<input id="setUrl" placeholder="https://api.openai.com/v1" spellcheck="false"></label>
         <div class="two">
-          <label>模型名<input id="setModel" placeholder="gpt-4o-mini" spellcheck="false"></label>
+          <label>模型名<input id="setModel" placeholder="gpt-4o-mini" spellcheck="false" list="modelHints" autocomplete="off"></label>
           <label>API Key<input id="setKey" type="password" placeholder="sk-…" spellcheck="false"></label>
         </div>
       </section>
@@ -229,7 +230,7 @@
       <section>
         <h4>视觉模型 <span class="tag">可留空，留空则沿用上面的地址与 Key</span></h4>
         <div class="two">
-          <label>模型名<input id="setVModel" placeholder="gpt-4o-mini" spellcheck="false"></label>
+          <label>模型名<input id="setVModel" placeholder="gpt-4o-mini" spellcheck="false" list="modelHints" autocomplete="off"></label>
           <label>API Key（可选）<input id="setVKey" type="password" placeholder="同上" spellcheck="false"></label>
         </div>
       </section>
@@ -740,6 +741,23 @@ function paintEngine(cfg){
   }
 }
 
+/* The gateway does not let us list its models, so the honest hint is the set
+   we already ship: a datalist, not a locked dropdown — a new model name must
+   still be typeable. */
+function paintModelHints(presets){
+  let list = $('#modelHints');
+  if(!list){
+    list = document.createElement('datalist');
+    list.id = 'modelHints';
+    document.body.appendChild(list);
+  }
+  const names = [];
+  presets.forEach(p=>{
+    [p.model, p.vision_model].forEach(n=>{ if(n && !names.includes(n)) names.push(n); });
+  });
+  list.innerHTML = names.map(n=>`<option value="${esc(n)}">`).join('');
+}
+
 function openSettings(){
   const cfg = S.settings || {};
   const t = cfg.text || {}, v = cfg.vision || {};
@@ -750,6 +768,7 @@ function openSettings(){
   $('#setVModel').value = v.model || '';
   $('#setVKey').value = '';
   $('#setVKey').placeholder = v.has_key ? `${v.key}（已保存）` : '同上';
+  paintModelHints(cfg.presets || []);
   const box = $('#presets');
   box.innerHTML = '';
   (cfg.presets || []).forEach(preset=>{
@@ -823,8 +842,8 @@ async function openIdeas(){
   if(!(S.facts && S.facts.length)) { toast('先传一份有数据的材料'); return; }
   const sheet = $('#ideaSheet');
   sheet.style.display = 'grid';
-  $('#ideaList').innerHTML = '<div class="idea-empty">模型正在读材料，可能需要半分钟…</div>';
-  busy(true, '模型在想角度', '它在读事实清单，找三种不同的讲法…');
+  $('#ideaList').innerHTML = '<div class="idea-empty">正在读材料，找三种不同的讲法…</div>';
+  busy(true, '在想角度', '接模型时问模型；没接时直接从数字里读。');
   try{
     const res = await fetch('/api/ideas', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
     const d = await res.json();
@@ -833,6 +852,10 @@ async function openIdeas(){
       $('#ideaList').innerHTML = `<div class="idea-empty">${esc(d.detail || '模型没有回话')}</div>`;
       return;
     }
+    S.ideaSource = d.source || 'model';
+    $('#ideaHint').textContent = d.source === 'local'
+      ? '本地角度：没有接模型，这三条是从数字里读出来的。接上模型会写得更像人话。'
+      : '模型读出来三个角度，选一个它就会按这个角度重排。';
     $('#ideaList').innerHTML = d.ideas.map((it, i)=>`
       <button class="idea" data-i="${i}">
         <span class="idea-n">0${i+1}</span>
@@ -860,7 +883,8 @@ async function pickIdea(idea){
                             brief: `${idea.angle} ${idea.why}`})});
     const d = await res.json();
     if(!res.ok){ busy(false); toast(d.detail || '重排失败'); return; }
-    apply(d); busy(false); toast('按这个角度排好了');
+    apply(d); busy(false);
+    toast(S.ideaSource === 'local' ? '按本地角度排好了（未接模型）' : '按这个角度排好了');
     await build(false);
   }catch(e){ busy(false); toast('重排失败：' + e.message); }
 }

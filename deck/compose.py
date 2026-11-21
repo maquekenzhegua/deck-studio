@@ -21,6 +21,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from . import fmt
 from .compute import Fact, funnel_steps
 from .ingest import Bundle
 from .plan import Plan, Slide
@@ -189,6 +190,15 @@ def _pull_quote(bundle) -> tuple[str, str]:
     return "", ""
 
 
+def _short(v: float, unit: str) -> str:
+    """A value the way the slide would print it: 977.2 万, 4,685, 34.0%."""
+    if unit == "ratio":
+        return f"{v * 100:.1f}%"
+    if unit == "money":
+        return fmt.money(v)
+    return fmt.num(v)
+
+
 def _pct(v: float) -> str:
     return f"{v * 100:+.1f}%"
 
@@ -289,7 +299,9 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
             ranked = sorted(bd.points, key=lambda kv: -abs(kv[1]))
             parts.append(f"{ranked[0][0]}{_metric(bd)}最高")
             parts.append(f"{ranked[-1][0]}最低")
-    thesis = "，".join(parts) if parts else (deck_title or "经营复盘")
+    # A title the user (or an angle they picked) typed wins over the one we
+    # would have generated: the cover is the one place their wording matters.
+    thesis = (deck_title or "").strip() or ("，".join(parts) if parts else "经营复盘")
 
     sub_bits: list[str] = []
     if trend:
@@ -784,3 +796,60 @@ def draft_pictures(bundle) -> Plan:
     slides.append(Slide("closing", "把这几张图带进讨论",
                         bullets=["先说清这是哪一段现场", "再说它改变了哪个判断"]))
     return Plan(title, "图片材料", slides)
+
+
+def angles(facts: list[Fact]) -> list[dict]:
+    """Three readings of the same numbers, without asking a model.
+
+    The point is not to imitate a model's prose; it is that "give me three
+    angles" is useful before you have an API key, and an offline tool that
+    refuses the button is worse than one that says what it can see.
+    """
+    out: list[dict] = []
+    ratio = _ratio(facts)
+    if ratio and len(ratio.points) >= 3:
+        top, bottom = _top(ratio), _bottom(ratio)
+        neg = _neg(ratio)
+        tail = "、".join(neg[:2]) if neg else bottom
+        out.append({
+            "title": f"{top}扛住了增长",
+            "angle": f"把资源压到{top}，再决定要不要救{tail}",
+            "why": f"{top} {_pct(_val(ratio, top))}，{tail} 已经在退；先复制，再止血。",
+        })
+    funnel = _funnel(facts)
+    if funnel and len(funnel.points) >= 3:
+        steps = funnel_steps(funnel.points)
+        pairs = [(steps[i][0], steps[i + 1][0], steps[i + 1][2]) for i in range(len(steps) - 1)]
+        a, b, rate = min(pairs, key=lambda t: t[2])
+        out.append({
+            "title": f"漏在{b}，不在入口",
+            "angle": f"先修{a}到{b}这一段，别急着加线索",
+            "why": f"{a}到{b}只转 {rate*100:.0f}%，全链路最低；签约只剩 {funnel.points[-1][1]:,.0f}。",
+        })
+    bd = next((f for f in facts if f.kind == "breakdown" and len(f.points) >= 3
+               and f.unit in ("money", "count", "raw") and f.chart != "funnel"
+               and "阶段" not in (f.label or "")), None)
+    if bd:
+        ranked = sorted(bd.points, key=lambda kv: -abs(kv[1]))
+        total = sum(abs(v) for _, v in ranked) or 1.0
+        share = abs(ranked[0][1]) / total
+        out.append({
+            "title": f"{ranked[0][0]}占了 {share:.0%}",
+            "angle": f"{ranked[0][0]}是基本盘，尾部先不铺人手",
+            "why": f"{ranked[0][0]} {_short(ranked[0][1], bd.unit)}，尾部 {ranked[-1][0]} 只有 {_short(ranked[-1][1], bd.unit)}。",
+        })
+    dur = _duration(facts, set())
+    if len(out) < 3 and dur and len(dur.points) >= 2:
+        slow, fast = _top(dur), _bottom(dur)
+        out.append({
+            "title": f"时间花在{slow}",
+            "angle": f"把{slow}的等待拆开，看看卡在谁手上",
+            "why": f"{slow} {_short(_val(dur, slow), dur.unit)}，{fast} 只有 {_short(_val(dur, fast), dur.unit)}。",
+        })
+    if len(out) < 3 and ratio and len(ratio.points) >= 2:
+        out.append({
+            "title": "增长不是均匀的",
+            "angle": "先画一张增速地图，再谈预算怎么分",
+            "why": f"最高 {_top(ratio)} {_pct(_val(ratio, _top(ratio)))}，最低 {_bottom(ratio)} {_pct(_val(ratio, _bottom(ratio)))}。",
+        })
+    return out[:3]

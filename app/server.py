@@ -488,9 +488,14 @@ def create_app() -> FastAPI:
             raise HTTPException(409, "先传一份有数据的材料")
         client = client_for_model()
         if client is None:
-            raise HTTPException(409, "先在「模型」里填一个端点，模型才能提出自己的角度")
+            # No model, no dead end: the same three readings are derivable
+            # from the numbers themselves, and saying so beats a 409.
+            local = compose.angles(facts)
+            if not local:
+                raise HTTPException(409, "这份材料里还没有能提出角度的结构")
+            return {"ideas": local, "source": "local"}
         try:
-            return {"ideas": agent.pitch(bundle, facts, client=client)}
+            return {"ideas": agent.pitch(bundle, facts, client=client), "source": "model"}
         except LLMError as exc:
             raise HTTPException(502, f"模型没有回话：{str(exc)[:120]}")
         except ValueError as exc:

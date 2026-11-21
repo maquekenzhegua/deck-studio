@@ -323,8 +323,10 @@ def cover(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                      _rgb(theme.dark), _mix(theme.dark, "#FFFFFF", 0.10), angle=35)
         # A drawn field, not decoration: one ring gives the page a centre of
         # gravity without inventing an illustration.
-        ring = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(8.05), Inches(-1.55),
-                                      Inches(7.1), Inches(7.1))
+        # Keep the ring clear of the headline: a 46pt title can run to 8.35in,
+        # and an arc crossing the last character reads as a printing fault.
+        ring = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(9.55), Inches(-2.05),
+                                      Inches(7.4), Inches(7.4))
         ring.fill.background()
         ring.line.color.rgb = _mix(theme.dark, "#FFFFFF", 0.24)
         ring.line.width = Emu(19050)
@@ -1049,9 +1051,14 @@ def table(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                  color=_rgb(theme.ink2), line_spacing=1.35)
 
     src = (f.source or "").split(" / ")[0]
-    if src:
+    # A table that quietly drops rows is a table that lies about the shape of
+    # the data: say how many there were and that these are the largest.
+    cut = len(f.points) - len(pts)
+    tail = f"  ·  共 {len(f.points)} 项，按大小取前 {len(pts)}" if cut > 0 else ""
+    if src or tail:
+        lead = f"来源 · {Path(src).name}" if src else ""
         add_text(slide, x0, Inches(6.92), Inches(9.4), Inches(0.24),
-                 f"来源 · {Path(src).name}", theme, size=Pt(9),
+                 f"{lead}{tail}", theme, size=Pt(9),
                  color=_rgb(theme.muted), spacing=0.6)
 
     page_number(slide, idx, theme, total)

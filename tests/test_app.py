@@ -252,3 +252,20 @@ class AutoPipelineTest(unittest.TestCase):
         html = (root / "app" / "static" / "index.html").read_text(encoding="utf-8")
         self.assertEqual(html.count('id="notesBtn"'), 1)
         self.assertIn('id="autoBtn"', html)
+
+
+class OfflineIdeasTest(unittest.TestCase):
+    """No key, no dead end: three angles come out of the numbers themselves."""
+
+    def test_ideas_fall_back_to_the_data(self):
+        from app import server as srv
+        c = TestClient(srv.app)
+        c.post("/api/sample")
+        with mock.patch.object(srv, "client_for_model", return_value=None):
+            r = c.post("/api/ideas", json={})
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["source"], "local")
+        self.assertEqual(len(body["ideas"]), 3)
+        for idea in body["ideas"]:
+            self.assertTrue(idea["title"])

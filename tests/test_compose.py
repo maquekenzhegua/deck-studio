@@ -216,3 +216,32 @@ class SectionPhotoTest(unittest.TestCase):
         page = prs.slides[1]
         pics = [sh for sh in page.shapes if sh.shape_type == 13]
         self.assertTrue(pics, "section page should carry a picture when the material has a photo")
+
+
+class AnglesTest(unittest.TestCase):
+    """Before a key exists, "three angles" still has to say something true."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.bundle = ingest.load(DATA)
+        cls.facts = compute.extract(cls.bundle)
+
+    def test_three_readings_of_the_same_numbers(self) -> None:
+        ideas = compose.angles(self.facts)
+        self.assertEqual(len(ideas), 3)
+        titles = [i["title"] for i in ideas]
+        self.assertEqual(len(set(titles)), 3)
+        for idea in ideas:
+            self.assertTrue(idea["angle"] and idea["why"])
+            self.assertNotIn("720.0", idea["title"])
+
+    def test_the_funnel_angle_names_stages_not_numbers(self) -> None:
+        ideas = compose.angles(self.facts)
+        funnel = next(i for i in ideas if "漏在" in i["title"])
+        self.assertIn("商机", funnel["angle"])
+        self.assertIn("方案", funnel["angle"])
+
+    def test_a_typed_title_becomes_the_cover(self) -> None:
+        plan = compose.draft(self.bundle, self.facts, deck_title="华东扛住了增长")
+        self.assertEqual(plan.deck_title, "华东扛住了增长")
+        self.assertEqual(plan.slides[0].title, "华东扛住了增长")
