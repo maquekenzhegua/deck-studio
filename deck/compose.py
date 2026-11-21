@@ -147,6 +147,10 @@ def _waterfall(facts: list[Fact]) -> Slide | None:
         deltas.append((cat, value - value / (1 + g)))
     if len(deltas) < 3:
         return None
+    # A bridge reads left to right: every gain first (largest to smallest),
+    # then the drags. Mixing a +2 between two negatives makes the staircase
+    # look broken even when the arithmetic is right.
+    deltas.sort(key=lambda kv: -kv[1])
     plus = sum(d for _, d in deltas if d > 0)
     minus = sum(d for _, d in deltas if d < 0)
     top = max(deltas, key=lambda kv: kv[1])[0]
@@ -160,7 +164,7 @@ def _waterfall(facts: list[Fact]) -> Slide | None:
                  note="把增长拆开看：正贡献集中在少数区域，负贡献在拖后腿。",
                  bullets=[f"{top}独自贡献了大部分增量",
                           f"{drag}在往回拽，止血比拉新更急",
-                          f"{drag}的下滑，被{top}一区盖过"])
+                          "两次下滑加起来，不到领涨区的两成"])
 
 
 def _pull_quote(bundle) -> tuple[str, str]:

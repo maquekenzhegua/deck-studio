@@ -856,7 +856,9 @@ def _water_png(ids: list[str], facts: dict[str, Fact], name: str, theme: Theme) 
         steps.append((cat, value - prev))
     if len(steps) < 3:
         return None
-    steps.sort(key=lambda kv: -abs(kv[1]))
+    # Gains first, largest to smallest, then the drags: a bridge is read
+    # left to right, and a +2 after two negatives breaks the staircase.
+    steps.sort(key=lambda kv: -kv[1])
     return charts2.waterfall(steps[:6], name, theme, w=8.05, h=4.35, unit="money")
 
 
