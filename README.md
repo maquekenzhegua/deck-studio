@@ -175,7 +175,7 @@ python tools/accept.py
 python -m unittest discover -s tests
 ```
 
-217 条离线测试：数字校验、离线规划、版式与图表、模型主导的降级路径、模型自查、多模态分类、PDF/Excel 原生图表、模板配色、QA 阈值、HTTP 接口、一句话改稿。
+239 条离线测试：数字校验、离线规划、版式与图表、模型主导的降级路径、模型自查、多模态分类、PDF/Excel 原生图表、模板配色、QA 阈值、HTTP 接口、一句话改稿。
 没有网络、没有模型、没有 Office 也能全绿。
 
 ## 目录
