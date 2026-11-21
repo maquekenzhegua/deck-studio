@@ -94,3 +94,17 @@ python tools/accept.py          # 起打包版、走真实 HTTP、9 项断言
 - 视觉读图要显式配一个支持图片输入的模型；DeepSeek 只有文本，填了会在第一次读图时 404。
 - 模板只学配色、字体、标题字号，不复制别人的版式几何。
 - 模型慢的时候（30 字/秒级别）一份 8 页稿要十几分钟，界面会一直显示当前步骤，不会假装完成。
+
+## 6. 打包版 + 真实网关（2026-11-21 19:12–20:05）
+
+`dist-v47` 用 `out/run47.sh`（`DECK_HEADLESS=1 DECK_PORT=8981`，环境里带 `DECK_BASE_URL/DECK_MODEL/DECK_API_KEY`）启动，`/api/state` 的 `settings.mode=model`、`vision_on=true`，说明打包版读到了环境变量。
+
+同一时段网关很慢：`GET /models` 本身要 11 秒，`/chat/completions` 多次 `The read operation timed out`。全自动的进度条如实记录了降级：
+
+```
+模型在读材料，找三个可以讲的角度
+提角度没成功，按材料本身排：mimo-v2.6-flash 连接失败: The read operation timed out
+在排页序（模型）
+```
+
+结论：慢网关不会卡死界面，会退回离线规则并继续；反过来，网关正常时模型主导是跑通过的（7 页 304s、8 页约 20 分钟、9 页含补材料）。
