@@ -53,3 +53,30 @@ def apply(plan: Plan) -> tuple[Plan, list[str]]:
             bullets = bullets[:BULLETS]
         slides.append(replace(slide, title=title, bullets=bullets))
     return replace(plan, slides=slides), log
+
+
+def fit_pages(plan: Plan, want: int) -> tuple[Plan, list[str]]:
+    """Cut a deck down to `want` pages without losing its skeleton.
+
+    The title, every section mark and the closing page are structure, not
+    content: dropping them to hit a number would leave a deck that no longer
+    reads as a deck. Everything between is sampled evenly so the argument keeps
+    its shape instead of keeping only the opening.
+    """
+    total = len(plan.slides)
+    if want <= 0 or total <= want:
+        return plan, []
+    fixed = {0} | {i for i, s in enumerate(plan.slides) if s.layout == "section"}
+    fixed.add(total - 1)
+    if len(fixed) >= want:
+        # Not enough room even for the skeleton: keep the ends and the first
+        # section mark, drop the rest — better a short deck than a broken one.
+        keep = sorted({0, total - 1} | (sorted(fixed - {0, total - 1})[: max(0, want - 2)]))
+    else:
+        room = want - len(fixed)
+        pool = [i for i in range(total) if i not in fixed]
+        step = len(pool) / room if room else 1
+        picked = [pool[min(len(pool) - 1, int(i * step))] for i in range(room)]
+        keep = sorted(fixed | set(picked))
+    slides = [plan.slides[i] for i in keep]
+    return replace(plan, slides=slides), [f"按「{want} 页」删掉 {total - len(slides)} 页，保留章节与收尾"]

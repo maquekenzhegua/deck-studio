@@ -39,3 +39,33 @@ class TrimTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FitPagesTest(unittest.TestCase):
+    def _plan(self, n=12):
+        slides = [Slide(layout="title", title="封面")]
+        slides += [Slide(layout="section", title="第一章")] if n > 3 else []
+        slides += [Slide(layout="chart", title=f"页{i}", fact="f1")
+                   for i in range(n - 2)]
+        slides += [Slide(layout="closing", title="收尾")]
+        return Plan(deck_title="t", subtitle="s", slides=slides)
+
+    def test_keeps_the_skeleton_and_hits_the_number(self):
+        plan, log = tighten.fit_pages(self._plan(12), 6)
+        self.assertEqual(len(plan.slides), 6)
+        self.assertEqual(plan.slides[0].layout, "title")
+        self.assertEqual(plan.slides[-1].layout, "closing")
+        self.assertIn("section", [s.layout for s in plan.slides])
+        self.assertTrue(log and "6" in log[0])
+
+    def test_a_budget_above_the_length_changes_nothing(self):
+        plan, log = tighten.fit_pages(self._plan(6), 12)
+        self.assertEqual(len(plan.slides), 7)
+        self.assertEqual(log, [])
+
+    def test_order_is_preserved(self):
+        plan, _ = tighten.fit_pages(self._plan(12), 5)
+        titles = [s.title for s in plan.slides]
+        self.assertEqual(titles[0], "封面")
+        self.assertEqual(titles[-1], "收尾")
+        self.assertEqual(len(titles), len(set(titles)))

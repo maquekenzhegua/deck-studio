@@ -30,7 +30,7 @@ if str(ROOT) not in sys.path:
 
 from app import paths, settings  # noqa: E402
 from deck import (agent, compose, compute, edit, eyes, ingest, multimodal,  # noqa: E402
-                  readiness, render2, review as reviewmod, verify)
+                  readiness, render2, review as reviewmod, tighten, verify)
 from deck.llm import Client, LLMError  # noqa: E402
 from deck.plan import LAYOUTS, Plan, Slide, _validate  # noqa: E402
 from deck.visual import THEMES  # noqa: E402
@@ -624,6 +624,12 @@ def create_app() -> FastAPI:
             _auto_note("在排页序" + ("（模型）" if client is not None else "（离线规则）"))
             result = agent.plan(bundle, facts, brief, slides=slides, client=client)
             plan = result.plan
+            # Offline planning ignores the page budget; the control in the UI is
+            # a promise, so trim here rather than silently returning sixteen.
+            plan, cut = tighten.fit_pages(plan, slides)
+            if cut:
+                result.log.extend(cut)
+                box["log"].extend(cut)
             with LOCK:
                 STATE["plan"] = plan
                 STATE["planner"] = {"who": result.planner, "model": result.model,
