@@ -102,6 +102,12 @@
 ## 0.1.0
 
 - 第一个可用版本：拖文件 → 抽事实 → 排版 → 预览 → 导出 PPTX / PDF / PNG
+## 0.10.3
+- 模型面板新增 OpenCode Go 预设并排第一：`https://opencode.ai/inference/go/v1`，默认 `mimo-v2.6-flash`，可读图
+- 网关兼容：补 `x-opencode-session`（缺了会 400 MissingSessionID）、显式 UA（urllib 默认 UA 会被 Cloudflare 403/1010）
+- 「测试连接」与真实客户端同口径，实测「连通 · mimo-v2.6-flash」
+- 恢复的离线草稿标签改为「离线草稿 · 可重排」，不再与顶栏「已接模型」矛盾
+
 ## 0.10.2
 - 图表文字改用 bold，不再让 matplotlib 猜字重
 - 新增 docs/verification.md：干净 clone、模型预设、多模态、安装包四组可复跑检查
