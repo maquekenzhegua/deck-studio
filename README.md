@@ -83,6 +83,10 @@ python -m deck.cli notes  samples/data --plan out/plan.json -o out/plan-notes.js
 
 ![模型设置](docs/settings.png)
 
+预设里第一个就是 OpenCode Go（`oc_sk_…` 的套餐 Key，默认 `mimo-v2.6-flash`，同一个 Key 也能读图）：
+
+![OpenCode Go](docs/opencode-go.png)
+
 内置预设：**OpenCode Go**（`https://opencode.ai/inference/go/v1`，默认 `mimo-v2.6-flash`，Key 形如 `oc_sk_…`，可读图）、DeepSeek、通义千问（DashScope）、智谱 GLM、Moonshot、豆包（方舟）、百川智能、MiniMax、SiliconFlow、OpenAI、本机 Ollama。切换只改这一个面板，不碰环境变量；模型名是普通输入框，套餐里换了模型直接改。
 视觉模型单独一栏，留空就沿用文本模型的地址与 Key；只有显式填了视觉模型，界面才会显示「可读图」。
 
@@ -128,6 +132,10 @@ python -m deck.cli notes  samples/data --plan out/plan.json -o out/plan-notes.js
 优先调用本机 **LibreOffice**（`soffice --headless` 转 PDF，再用 PyMuPDF 逐页渲染成 PNG）；
 没有 LibreOffice 才退回 PowerPoint COM（机器上只装 WPS 时 COM 会不稳）；两条路都没有时 PPTX 照常写出，只是不给逐页预览。
 
+只有图片、没有表格时，它不会硬凑图表，而是把照片当材料排成一篇：封面、现场页、收尾。
+
+![纯图片稿](docs/photo-deck.png)
+
 ## 设计不是拍脑袋
 
 标题用**思源宋体**（本机缺字体时依次退到华文宋体、宋体），正文用 Noto Sans SC：章节页、封面、收尾是「印刷品」的语气，数据页保持无衬线的中性。字号、栅格、图表密度都来自下面这组实测，不是凭感觉。
@@ -141,6 +149,12 @@ python -m deck.cli notes  samples/data --plan out/plan.json -o out/plan-notes.js
 
 渲染器里每一条反模式都对应一次实拍返工：幽灵元素、单位漂移、42% 基线错位、正负同色、压平趋势、把图表当照片、一页三个焦点。
 `tools/qa.py` 会把成稿再量一遍（墨迹率、字号、出血、连续同版式），界面上的「质量 100」就是它给的。
+
+改版前后（左：最早的规则版；右：现在）：
+
+![改版前后](docs/before-after.png)
+
+当前的 16 页成稿：
 
 ![16 页成稿](docs/deck-preview.png)
 
