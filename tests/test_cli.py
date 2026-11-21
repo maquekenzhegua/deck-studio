@@ -53,3 +53,21 @@ class ReviewCommandTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TextOnlyBuildTest(unittest.TestCase):
+    def test_build_from_a_memo_without_a_table(self):
+        import tempfile, types
+        from pathlib import Path
+        from deck import cli
+        with tempfile.TemporaryDirectory() as td:
+            doc = Path(td) / "说明.md"
+            doc.write_text("# 说明\n\n客户不是不愿意付钱，是我们没有把价值讲清楚。\n\n"
+                           "下半年先把方案阶段缩短，再谈拉新。\n", encoding="utf-8")
+            out = Path(td) / "deck.pptx"
+            args = types.SimpleNamespace(input=str(doc.parent), out=str(out),
+                                         offline=True, theme="editorial",
+                                         slides=0, title="", classic=False,
+                                         force=True, model="", base_url="")
+            self.assertEqual(cli.cmd_build(args), 0)
+            self.assertTrue(out.exists())

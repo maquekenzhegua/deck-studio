@@ -130,11 +130,33 @@ def cmd_plan(args) -> int:
     return 0
 
 
+def _render_only(args, plan, bundle, facts) -> int:
+    """Write a deck whose argument came from the material, not from a table."""
+    print(f"\n大纲（{len(plan.slides)} 页）：", file=sys.stderr)
+    for i, s in enumerate(plan.slides, 1):
+        print(f"  {i}. [{s.layout}] {s.title}", file=sys.stderr)
+    out = render2.build(plan, facts, bundle.pictures, args.out, theme=args.theme)
+    Path(args.out).with_suffix(".plan.json").write_text(plan.to_json(), encoding="utf-8")
+    print(f"\n已生成 {out}", file=sys.stderr)
+    return 0
+
+
 def cmd_build(args) -> int:
     b = _load(args.input)
     all_facts = compute.extract(b)
     if not all_facts:
-        print("没有算出任何事实：输入里需要有带数值列的表格。", file=sys.stderr)
+        # No table, no chart, no KPI. A folder of documents still has something
+        # to say, and a folder of pictures still has something to show; only an
+        # empty folder has neither.
+        if b.docs:
+            p = compose.draft_text(b)
+            print("\n没有数据表：按文档原文出稿。", file=sys.stderr)
+            return _render_only(args, p, b, all_facts)
+        if b.pictures:
+            p = compose.draft_pictures(b)
+            print("\n没有数据表：按图片材料出稿。", file=sys.stderr)
+            return _render_only(args, p, b, all_facts)
+        print("没有可用的材料：既没有表格，也没有正文和图片。", file=sys.stderr)
         return 1
     facts = all_facts if args.offline else compute.pick(all_facts, args.slides)
 
