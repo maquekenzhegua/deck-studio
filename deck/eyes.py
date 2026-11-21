@@ -34,6 +34,10 @@ LOOK_SYSTEM = """你是一份商业演示的版式总监。你会看到若干张
 没有问题的页面不要出现在结果里。"""
 
 MAX_PAGES = 8
+# A sixteen-page deck should not be reviewed half-way: walk it in batches of
+# MAX_PAGES instead of silently looking at the first eight.
+MAX_CHUNKS = 2
+MAX_TOTAL = MAX_PAGES * MAX_CHUNKS
 
 
 @dataclass
@@ -55,7 +59,7 @@ def _small(src: Path, out_dir: Path, width: int = 960) -> Path:
     return dst
 
 
-def _notes(raw: str, limit: int) -> list[Note]:
+def _notes(raw: str, limit: int, offset: int = 0) -> list[Note]:
     text = raw.strip()
     text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.M).strip()
     try:
@@ -77,21 +81,33 @@ def _notes(raw: str, limit: int) -> list[Note]:
         problem = str(item.get("problem") or "").strip()[:90]
         fix = str(item.get("fix") or "").strip()[:120]
         if 1 <= page <= max(1, limit) and problem and fix:
-            out.append(Note(page, problem, fix))
+            out.append(Note(page + offset, problem, fix))
     return out
 
 
 def look(pages: list[Path], client: llm.Client, *, limit: int = MAX_PAGES) -> list[Note]:
-    """Send up to `limit` pages to a vision model; return its layout notes."""
-    picked = [Path(p) for p in pages if Path(p).exists()][:limit]
+    """Walk the deck in batches of `limit` pages; return notes in page order."""
+    picked = [Path(p) for p in pages if Path(p).exists()][:MAX_TOTAL]
     if not picked:
         raise ValueError("还没有可以看的页面")
+    found: list[Note] = []
     with tempfile.TemporaryDirectory(prefix="deck-eyes-") as tmp:
-        small = [_small(p, Path(tmp)) for p in picked]
-        listing = "、".join(f"第 {i} 页" for i in range(1, len(small) + 1))
-        text = f"这是同一份演示的 {len(small)} 张页面，依次为 {listing}。请按页指出最明显的一处版式问题。"
-        raw = client.vision(LOOK_SYSTEM, text, small, max_tokens=900)
-    return _notes(raw, len(small))
+        for start in range(0, len(picked), limit):
+            batch = picked[start:start + limit]
+            small = [_small(p, Path(tmp)) for p in batch]
+            listing = "、".join(f"第 {start + i} 页" for i in range(1, len(small) + 1))
+            text = (f"这是同一份演示里的 {len(small)} 张页面，依次为 {listing}。"
+                    "请按页指出最明显的一处版式问题。")
+            raw = client.vision(LOOK_SYSTEM, text, small, max_tokens=900)
+            found.extend(_notes(raw, len(small), start))
+    seen = set()
+    out: list[Note] = []
+    for n in sorted(found, key=lambda x: x.page):
+        if n.page in seen:
+            continue
+        seen.add(n.page)
+        out.append(n)
+    return out
 
 
 def as_prompt(notes: list[Note]) -> str:
@@ -99,8 +115,12 @@ def as_prompt(notes: list[Note]) -> str:
     return "按版式总监的意见调整页面（只改版式与页面上的措辞，不要动数字，不要增删页）：\n" + "\n".join(lines)
 
 
-def summary(notes: list[Note]) -> str:
+def summary(notes: list[Note], looked: int = 0) -> str:
     if not notes:
-        return "模型看过了，没有发现明显的版式问题"
+        # Saying how many pages were actually read keeps "no notes" from
+        # reading like the model never opened the file.
+        return (f"看了 {looked} 页，没有发现明显的版式问题" if looked
+                else "模型看过了，没有发现明显的版式问题")
     pages = "、".join(str(n.page) for n in notes)
-    return f"{len(notes)} 处版式问题（第 {pages} 页）"
+    head = f"看了 {looked} 页，" if looked else ""
+    return f"{head}{len(notes)} 处版式问题（第 {pages} 页）"

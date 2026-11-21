@@ -23,6 +23,8 @@ class Fake:
     def __init__(self, payload):
         self.payload = payload
         self.seen = None
+        self.calls = 0
+        self.total = 0
         self.model = "fake-vl"
 
     def vision(self, system, text, images, **kw):
@@ -30,6 +32,8 @@ class Fake:
         with Image.open(images[0]) as first:
             self.first = first.size
         self.seen = list(images)
+        self.calls += 1
+        self.total += len(images)
         self.sizes = []
         for p in images:
             with Image.open(p) as im:
@@ -45,8 +49,8 @@ class LookTest(unittest.TestCase):
         ]}
         with tempfile.TemporaryDirectory() as tmp:
             got = eyes.look(pages(3, tmp), Fake(payload))
-        self.assertEqual([n.page for n in got], [2, 1])
-        self.assertEqual(got[0].fix, "整栏上移 0.3 英寸")
+        self.assertEqual([n.page for n in got], [1, 2])
+        self.assertEqual(got[1].fix, "整栏上移 0.3 英寸")
 
     def test_a_note_without_a_fix_is_dropped(self):
         payload = {"notes": [{"page": 1, "problem": "看着挤", "fix": ""}]}
@@ -73,11 +77,25 @@ class LookTest(unittest.TestCase):
             self.assertLessEqual(w, 960)
             self.assertGreater(h, 0)
 
-    def test_at_most_eight_pages_go_to_the_model(self):
+    def test_the_whole_deck_is_walked_in_batches(self):
         fake = Fake({"notes": []})
         with tempfile.TemporaryDirectory() as tmp:
-            eyes.look(pages(10, tmp), fake)
+            eyes.look(pages(20, tmp), fake)
+        # Twenty pages are reviewed as 8 + 8, and never more than MAX_TOTAL.
+        self.assertEqual(fake.calls, 2)
+        self.assertEqual(fake.total, eyes.MAX_TOTAL)
         self.assertEqual(len(fake.seen), eyes.MAX_PAGES)
+
+    def test_notes_from_the_second_batch_land_on_their_real_page(self):
+        payload = {"notes": [{"page": 2, "problem": "右栏空", "fix": "把读法上移"}]}
+        fake = Fake(payload)
+        with tempfile.TemporaryDirectory() as tmp:
+            got = eyes.look(pages(11, tmp), fake)
+        # The fake answers identically for both batches, so page 2 of batch two
+        # must surface as page 10 and never overwrite the real page 2.
+        pages_seen = [n.page for n in got]
+        self.assertIn(10, pages_seen)
+        self.assertIn(2, pages_seen)
 
     def test_prompt_names_pages_and_forbids_new_pages(self):
         text = eyes.as_prompt([eyes.Note(2, "右栏空", "把读法上移")])

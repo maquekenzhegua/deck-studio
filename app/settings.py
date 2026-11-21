@@ -149,9 +149,15 @@ def public(data: dict | None = None) -> dict:
     # A vision model is a separate choice: pointing it at a text-only model
     # (DeepSeek, MiniMax) fails at the first image with a 404, so absence of an
     # explicit vision model means "off", not "reuse the text one".
-    vision_on = bool(clean["vision_model"]) and bool(
+    # An environment-only deployment can configure the eyes too; report it the
+    # same way as it reports the text model, or the Look button stays hidden on
+    # a machine that could actually use it.
+    env_vision = bool(os.environ.get("DECK_VISION_MODEL")
+                      and (os.environ.get("DECK_VISION_URL") or os.environ.get("DECK_BASE_URL"))
+                      and (os.environ.get("DECK_VISION_KEY") or os.environ.get("DECK_API_KEY")))
+    vision_on = (bool(clean["vision_model"]) and bool(
         clean["vision_url"] or clean["base_url"]
-    )
+    )) or env_vision
     return {
         "text": {
             "base_url": clean["base_url"],
@@ -161,7 +167,7 @@ def public(data: dict | None = None) -> dict:
         },
         "vision": {
             "base_url": clean["vision_url"],
-            "model": clean["vision_model"],
+            "model": clean["vision_model"] or os.environ.get("DECK_VISION_MODEL", ""),
             "key": mask(clean["vision_key"]),
             "has_key": bool(clean["vision_key"]),
         },

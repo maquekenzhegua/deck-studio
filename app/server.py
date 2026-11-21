@@ -787,7 +787,15 @@ def create_app() -> FastAPI:
         never content edits.
         """
         with LOCK:
-            pages = list(STATE.get("pages") or [])
+            raw = list(STATE.get("pages") or [])
+            # STATE keeps browser URLs ("/files/png-.../01.png"); the eyes need
+            # files on disk. Translating here keeps one source of truth for the UI.
+            pages = []
+            for item in raw:
+                text = str(item)
+                path = OUT / text[len("/files/"):] if text.startswith("/files/") else Path(text)
+                if path.exists():
+                    pages.append(path)
             planner = STATE.get("planner")
         if not pages:
             raise HTTPException(409, "先生成一版，模型才有东西可看")
@@ -802,7 +810,7 @@ def create_app() -> FastAPI:
             raise HTTPException(409, str(exc)) from exc
         return {
             "notes": [{"page": n.page, "problem": n.problem, "fix": n.fix} for n in found],
-            "summary": eyes.summary(found),
+            "summary": eyes.summary(found, min(len(pages), eyes.MAX_TOTAL)),
             "prompt": eyes.as_prompt(found) if found else "",
             "planner": planner,
             "vision": client.model,
