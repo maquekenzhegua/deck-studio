@@ -207,6 +207,9 @@ def line(points: list[tuple[str, float]], name: str, theme: Theme, *,
     ax.set_xticklabels(labels[::step], fontsize=12, color=theme.muted)
     ax.tick_params(axis="x", pad=3)
     ax.set_yticks([])
+    # No y labels: the axes can start on the page margin instead of leaving a
+    # 1.25in gutter that reads as a misaligned chart.
+    fig.subplots_adjust(left=0.028, right=0.986, top=0.965, bottom=0.135)
     lo, hi = min(vals), max(vals)
     pad = (hi - lo) * 0.22 or max(abs(hi) * 0.1, 1.0)
     ax.set_ylim(lo - pad * 0.55, hi + pad)
