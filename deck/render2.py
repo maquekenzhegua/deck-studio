@@ -1329,7 +1329,9 @@ def split_image(prs, plan: Plan, s: Slide, facts: dict[str, Fact],
         # Follow the copy, but never crowd it: the passport block sits under
         # the note when there is room, and rides the foot of the column when
         # the copy runs long.
-        my = min(4.98, max(3.30, y + 0.55))
+        # A document page is a plate on a wall: its label sits at the foot of
+        # the column, not floating under the second paragraph.
+        my = 5.10 if flat else min(4.98, max(3.30, y + 0.55))
         add_rect(slide, MARGIN_X, Inches(my - 0.18), Inches(5.30), Emu(9525),
                  _rgb(theme.hair))
         for label, value in rows:
@@ -1484,8 +1486,15 @@ def quote(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     text = subst(s.title, facts)
     size = _fit(text, Inches(10.4), Inches(3.4), 40, 24, 1.42)
     # Keep the line length readable: a quote set too wide loses its rhythm.
-    lines = _quote_lines(text, Inches(10.2), size.pt)
-    add_text(slide, MARGIN_X, Inches(2.02), Inches(10.6), Inches(3.5),
+    # Break at punctuation, not at the width limit: "华北 / 东北" is one pair
+    # and splitting it makes the reader reassemble the sentence.
+    lines = _wrap_clauses(text, Inches(10.2), size.pt)
+    # Optically centre the quote between the mark and the attribution: a
+    # two-line quote pinned to 2.02in leaves a hole under it.
+    n = lines.count("\n") + 1
+    block = n * size.pt * 1.42 / 72
+    top = 1.95 + max(0.0, (3.60 - block) / 2)
+    add_text(slide, MARGIN_X, Inches(top), Inches(10.6), Inches(3.5),
              lines, theme, size=size, color=_rgb(theme.dark_ink),
              font="headline", line_spacing=1.42)
 

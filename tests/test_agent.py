@@ -359,3 +359,25 @@ class NotesTest(unittest.TestCase):
 
     def test_no_client_is_not_an_error(self):
         self.assertIsNone(agent.notes(self.plan, self.facts, client=None))
+
+
+class SkeletonTest(unittest.TestCase):
+    def test_six_pages_without_a_section_get_one(self):
+        from deck.agent import _skeleton
+        from deck.plan import Plan, Slide
+        slides = [Slide(layout="title", title="结论")]
+        slides += [Slide(layout="chart", title=f"图{i}") for i in range(5)]
+        out, log = _skeleton(Plan(deck_title="t", subtitle="s", slides=slides))
+        self.assertEqual(out.slides[1].layout, "section")
+        self.assertEqual(out.slides[-1].layout, "closing")
+        self.assertTrue(any("章节页" in line for line in log))
+
+    def test_a_short_deck_is_left_alone(self):
+        from deck.agent import _skeleton
+        from deck.plan import Plan, Slide
+        slides = [Slide(layout="title", title="结论"),
+                  Slide(layout="bullets", title="动作"),
+                  Slide(layout="closing", title="收尾")]
+        out, log = _skeleton(Plan(deck_title="t", subtitle="s", slides=slides))
+        self.assertEqual([s.layout for s in out.slides], ["title", "bullets", "closing"])
+        self.assertEqual(log, [])

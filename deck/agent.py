@@ -26,13 +26,13 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from . import chartpick, compose, tighten, review as reviewmod, verify
 from .compute import Fact
 from .ingest import Bundle
 from .llm import Client, LLMError
-from .plan import Plan, _validate, make as model_make
+from .plan import Plan, Slide, _validate, make as model_make
 
 REPAIR_SYSTEM = """你是一位汇报顾问，正在修订自己刚写的大纲。下面列出机器校验发现的问题。
 只修这些问题，不要重写已经成立的部分；页数、页序、已通过的标题尽量保留。
@@ -60,6 +60,35 @@ class AgentResult:
             return "离线规划"
         tail = f" · 修订 {self.revisions} 次" if self.revisions else ""
         return f"{self.model or '模型'} 主导{tail}"
+
+
+def _skeleton(plan: Plan) -> tuple[Plan, list[str]]:
+    """Structure the prompt asks for but a model still forgets.
+
+    A six-page deck with no chapter mark is a list, not a story, and a deck
+    that ends on a chart has no answer in it. Both are cheap to add and
+    expensive to miss, so the program adds them rather than asking again.
+    """
+    log: list[str] = []
+    slides = list(plan.slides)
+    if len(slides) >= 6 and not any(s.layout == "section" for s in slides):
+        slides.insert(1, Slide(layout="section", title="先说结论，再看证据",
+                               note="每一页只回答一个问题。"))
+        log.append("模型没给章节页，补一张")
+    if slides and slides[-1].layout != "closing":
+        slides.append(Slide(layout="closing", title="接下来做什么"))
+        log.append("模型没给收尾页，补一张")
+    # Three identical layouts in a row read as one long page. Move the next
+    # different page forward; the same guard exists in compose for offline work.
+    for i in range(2, len(slides) - 1):
+        if slides[i].layout == slides[i - 1].layout == slides[i - 2].layout:
+            j = next((k for k in range(i + 1, len(slides) - 1)
+                      if slides[k].layout != slides[i].layout), None)
+            if j is not None:
+                slides.insert(i, slides.pop(j))
+                log.append(f"第 {i + 1} 页起连着三页同版式，插了一页不同的")
+                break
+    return replace(plan, slides=slides), log
 
 
 def _issues(plan: Plan, facts: list[Fact]) -> list[str]:
@@ -211,6 +240,8 @@ def plan(bundle: Bundle, facts: list[Fact], ask: str = "", *, slides: int = 0,
     # are deterministic edits, so they never need another model round-trip.
     plan_model, trimmed = tighten.apply(plan_model)
     log.extend(trimmed)
+    plan_model, shaped = _skeleton(plan_model)
+    log.extend(shaped)
 
     if issues:
         log.append(f"保留模型稿，{len(issues)} 条版式建议未处理")
