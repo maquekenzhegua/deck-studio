@@ -668,6 +668,14 @@ def draft(bundle: Bundle, facts: list[Fact], *, deck_title: str = "",
             if j is not None:
                 slides.insert(i, slides.pop(j))
 
+    # A second chapter mark: one section page at the top tells the reader the
+    # deck has a shape, a second one tells them where the argument turns from
+    # evidence to choice. Without it the last third reads as more of the same.
+    acts_i = next((i for i, sl in enumerate(slides) if sl.layout == "bullets"), None)
+    if acts_i and acts_i >= 8:
+        slides.insert(acts_i, Slide(layout="section", title="前面是证据，后面是取舍",
+                                    note="数字讲完了；接下来只谈先做什么、不做什么。"))
+
     return Plan(deck_title=deck_title or thesis, subtitle=sub, slides=slides)
 
 def _stem(name: str, seen: dict[str, int] | None = None) -> str:

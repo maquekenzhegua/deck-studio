@@ -127,7 +127,7 @@ python -m deck.cli notes  samples/data --plan out/plan.json -o out/plan-notes.js
 渲染器里每一条反模式都对应一次实拍返工：幽灵元素、单位漂移、42% 基线错位、正负同色、压平趋势、把图表当照片、一页三个焦点。
 `tools/qa.py` 会把成稿再量一遍（墨迹率、字号、出血、连续同版式），界面上的「质量 100」就是它给的。
 
-![15 页成稿](docs/deck-preview.png)
+![16 页成稿](docs/deck-preview.png)
 
 ## 安装与打包
 
@@ -154,7 +154,7 @@ curl -s http://127.0.0.1:8799/health
 
 ## 验收
 
-一条命令，从一份空工作区走到一套成稿（上传 7 个文件 → 24 条事实 → 15 页 → 导出 PDF）：
+一条命令，从一份空工作区走到一套成稿（上传 7 个文件 → 24 条事实 → 16 页 → 导出 PDF）：
 
 ```bash
 python tools/accept.py

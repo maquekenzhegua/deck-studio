@@ -105,7 +105,7 @@ def main() -> int:
 
         built = post(base + "/api/build",
                      {"plan": state["plan"], "theme": "editorial", "force": True})
-        checks.append(("生成 15 页", len(built["pages"]) == 15, f"{len(built['pages'])} 页"))
+        checks.append(("生成 16 页", len(built["pages"]) == 16, f"{len(built['pages'])} 页"))
         checks.append(("质量分", (built.get("qa") or {}).get("score", 0) >= 90,
                        str((built.get("qa") or {}).get("score"))))
         checks.append(("预览导出", not built.get("previewError"),

@@ -7,7 +7,7 @@ python tools/accept.py            # 用 dist-v23 里的打包版
 DECK_EXE=... python tools/accept.py   # 换一个构建
 ```
 
-脚本会：新建一个空的工作区 → 用 HTTP 上传 `samples/data` 全部 7 个文件 → 抽取事实 → 生成 15 页 → 导出 PDF → 清理桌面上的导出物。每一步都断言，任一失败即退出码 1。
+脚本会：新建一个空的工作区 → 用 HTTP 上传 `samples/data` 全部 7 个文件 → 抽取事实 → 生成 16 页 → 导出 PDF → 清理桌面上的导出物。每一步都断言，任一失败即退出码 1。
 
 ## 2026-11-21 05:57 的实测输出
 
@@ -17,7 +17,7 @@ DECK_EXE=... python tools/accept.py   # 换一个构建
 | 抽出事实 | PASS | 24 条 |
 | 资料体检 | PASS | 资料 6/6 |
 | 识别图片 | PASS | 4 张（图表 / 照片 / 文档页） |
-| 生成 15 页 | PASS | 15 页 |
+| 生成 16 页 | PASS | 16 页 |
 | 质量分 | PASS | 100 |
 | 预览导出 | PASS | LibreOffice 无头转换，无错误 |
 | 数字校验 | PASS | 0 个问题 |

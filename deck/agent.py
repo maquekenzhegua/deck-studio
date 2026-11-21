@@ -28,7 +28,7 @@ import re
 import time
 from dataclasses import dataclass, field
 
-from . import chartpick, compose, review as reviewmod, verify
+from . import chartpick, compose, tighten, review as reviewmod, verify
 from .compute import Fact
 from .ingest import Bundle
 from .llm import Client, LLMError
@@ -206,6 +206,12 @@ def plan(bundle: Bundle, facts: list[Fact], ask: str = "", *, slides: int = 0,
     plan_model, picked = chartpick.apply(plan_model, facts)
     log.extend(picked)
 
+    # Typography last: a 31-character title wraps to three lines and pushes
+    # the chart down, and a sixth bullet is a memo rather than a slide. Both
+    # are deterministic edits, so they never need another model round-trip.
+    plan_model, trimmed = tighten.apply(plan_model)
+    log.extend(trimmed)
+
     if issues:
         log.append(f"保留模型稿，{len(issues)} 条版式建议未处理")
 
@@ -257,6 +263,7 @@ def revise(current: Plan, facts: list[Fact], text: str, *, client: Client,
         return None
     revised.deck_title = revised.deck_title or current.deck_title
     revised.subtitle = revised.subtitle or current.subtitle
+    revised, _ = tighten.apply(revised)
     return revised, f"模型改稿：{len(current.slides)} → {len(revised.slides)} 页"
 
 

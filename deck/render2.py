@@ -404,8 +404,10 @@ def section(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     # as a watermark, which is the job.
     num_color = (_mix(theme.dark, "#FFFFFF", 0.17) if shot
                  else _mix(theme.dark, theme.accent, 0.30))
-    add_text(slide, Inches(8.15), Inches(0.52), Inches(4.75), Inches(4.6),
-             num, theme, size=Pt(264), color=num_color,
+    # Two digits at 264pt need ~5.6in; a 4.75in box dropped the second glyph
+    # entirely on the second chapter ("02" rendered as "0").
+    add_text(slide, Inches(6.85), Inches(0.62), Inches(6.35), Inches(4.2),
+             num, theme, size=Pt(232), color=num_color,
              bold=True, align="left", font="headline", wrap=False)
 
     add_text(slide, MARGIN_X, Inches(2.02), Inches(6.2), Inches(0.26),
@@ -446,7 +448,9 @@ def section(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                          f"{page:02d}", theme, size=Pt(9.5), bold=True,
                          color=_rgb(theme.accent))
                 label = subst(item.title, facts)
-                label = label if len(label) <= 26 else label[:25] + "…"
+                # 5.95in at 12.5pt holds ~34 CJK characters; cutting at 26 was
+                # truncating titles that fit, mid-phrase.
+                label = label if len(label) <= 34 else label[:33] + "…"
                 add_text(slide, MARGIN_X + Inches(0.60), Inches(yy - 0.02),
                          Inches(5.95), Inches(0.32), label, theme, size=Pt(12.5),
                          color=_rgb(theme.dark_ink), line_spacing=1.2)
@@ -470,6 +474,9 @@ def section(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
                      f"{i:02d}", theme, size=Pt(9), bold=True,
                      color=_rgb(theme.accent if here else theme.dark_muted))
             label = subst(item.title, facts)
+            # Two or three chapters share 7.3in: the first clause is the name
+            # of the chapter, the rest is the sentence it came from.
+            label = re.split(r"[，；,;]", label)[0]
             label = label if len(label) <= 14 else label[:13] + "…"
             add_text(slide, cx, Inches(6.02), Inches(step - 0.12), Inches(0.5),
                      label, theme, size=Pt(12), bold=here,

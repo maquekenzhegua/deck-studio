@@ -30,7 +30,7 @@ class ComposeTest(unittest.TestCase):
         self.assertEqual(layouts[0], "title")
         self.assertEqual(layouts[-1], "closing")
         self.assertIn("section", layouts)
-        self.assertLessEqual(len(layouts), 15)
+        self.assertLessEqual(len(layouts), 16)
 
     def test_chart_variety(self) -> None:
         """A deck of five bar charts is a spreadsheet with margins."""

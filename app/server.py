@@ -113,10 +113,21 @@ def _human(label: str) -> str:
     return text.strip()
 
 
+AGG_CN = {"sum": "合计", "mean": "均值", "max": "最高", "min": "最低", "count": "计数"}
+
+
 def fact_json(f) -> dict:
+    label = _human(f.label)
+    pts = getattr(f, "points", None) or []
+    if pts:
+        # A distribution and its total used to share one label, so the rail
+        # showed two rows that looked like duplicates.
+        label = f"{label}（{len(pts)} 项）"
+    elif getattr(f, "agg", "") in AGG_CN:
+        label = f"{label}（{AGG_CN[f.agg]}）"
     return {
         "id": f.id,
-        "label": _human(f.label),
+        "label": label,
         "value": f.value,
         "raw": f.raw,
         "unit": f.unit,
