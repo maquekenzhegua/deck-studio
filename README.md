@@ -203,6 +203,10 @@ samples/data/    示例：销售表、经营小结、行业简报、旧 PPT、�
 - 生成以规则为主：接模型会更会写句子、更会挑页，但不会替你编数据；
 - 目前只针对 16:9；导出 PDF/PNG 依赖本机 LibreOffice 或 Office。
 
+## 更新记录
+
+版本变化见 [docs/CHANGELOG.md](docs/CHANGELOG.md)。
+
 ## License
 
 MIT
