@@ -8,7 +8,7 @@
 
 不是一个套模板的「一键生成」。它先把你手上的材料读懂、算清楚，再按一套从 19 份真实 deck（1144 页）里量出来的设计规范排版；模型可以主导论证，但**任何一个数字都必须能指回原始表格**。
 
-> **下载即用**：[Deck Studio · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest)（85 MB 压缩包，解压后双击 `Deck Studio.exe`，不需要装 Python）。不需要装 Office：本机有 LibreOffice 就能逐页预览（没有的话 PPTX 照常导出，只是不出预览图）。
+> **下载即用**：[Deck Studio · Windows x64](https://github.com/maquekenzhegua/deck-studio/releases/latest)（约 87 MB 压缩包，解压后双击 `Deck Studio.exe`，不需要装 Python）。不需要装 Office：本机有 LibreOffice 就能逐页预览（没有的话 PPTX 照常导出，只是不出预览图）。
 
 ![Deck Studio](docs/app-window.png)
 
@@ -53,7 +53,7 @@
 
 ## 一条路走到底：全自动
 
-点「全自动」就够：模型先读材料找角度 → 排页序 → 写讲稿 → 排版导预览算质量分，每一步都回显在标题栏右侧。没配模型时同一条路用离线规则走完，只是没有角度和讲稿那两步。
+点「全自动」就够：模型先读材料找角度 → 排页序 → 写讲稿 → 排版导预览算质量分，每一步都回显在标题栏右侧。没配模型时同一条路用离线规则走完：角度从数字里读，页序按固定叙事，讲稿留给现场。
 
 ## 两条入口
 
