@@ -45,6 +45,21 @@ python -c "from app.settings import PRESETS; print(len(PRESETS), sorted(PRESETS)
 | `/api/notes` | 26s | 8 页讲稿，句子不带数字 |
 | `/api/look`（16 页） | < 900s | 两批看完，结论写清看了几页 |
 
+## 2.1 OpenCode Go（用户主要用的那一家）
+
+| 项 | 值 |
+| --- | --- |
+| 地址 | `https://opencode.ai/inference/go/v1` |
+| 默认模型 | `mimo-v2.6-flash`（也支持图片输入） |
+| Key | 形如 `oc_sk_…`，套餐额度 |
+
+两个坑，都是实测踩出来的：
+
+1. **网关要 session 头**：不带 `x-opencode-session` 会返回 `400 MissingSessionID`；客户端每个实例生成一个 uuid 发过去。
+2. **前面有 WAF**：用 urllib 默认 UA 会被 Cloudflare 挡成 `403 error code: 1010`；客户端和「测试连接」都显式带 `User-Agent: deck/0.1 …`。
+
+「测试连接」实测返回 `连通 · mimo-v2.6-flash`；同一份 Key 走 `/api/auto` 能跑完提角度 → 排页 → 写讲稿 → 排版。
+
 ## 3. 多模态
 
 一次上传 `samples/data` 全部 7 个文件（xlsx／xlsx 图表／docx／pdf／png×2／jpg）：

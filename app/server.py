@@ -294,6 +294,21 @@ def review_now() -> dict:
             "summary": reviewmod.summary(found)}
 
 
+def _planner_view() -> dict:
+    """What the outline in front of you actually is.
+
+    A restored workspace holds an offline draft; if a model is configured the
+    honest label is "draft, the model has not re-ordered it yet", not
+    "offline planner" with a header that says a model is connected.
+    """
+    planner = dict(STATE.get("planner") or {})
+    mode = settings.public().get("mode")
+    if mode == "model" and planner.get("who") != "model":
+        planner["label"] = "离线草稿 · 可重排"
+        planner["who"] = "offline-draft"
+    return planner
+
+
 def snapshot() -> dict:
     with LOCK:
         bundle = STATE["bundle"]
@@ -329,7 +344,7 @@ def snapshot() -> dict:
             "qa": STATE["qa"],
             "review": review_now(),
             "readiness": readiness_now(),
-            "planner": STATE.get("planner"),
+            "planner": _planner_view(),
             "settings": settings.public(),
             "meta": list(getattr(bundle, "meta", {}) or {}) if bundle else [],
         }

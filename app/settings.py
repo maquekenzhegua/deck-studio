@@ -18,6 +18,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 
 from . import paths
@@ -25,7 +26,12 @@ from . import paths
 FILENAME = "settings.json"
 
 PRESETS: dict[str, dict[str, str]] = {
-    # Domestic endpoints first: that is what most users of this tool can
+    # OpenCode Go first: it is a subscription people already pay for, and its
+    # endpoint speaks the OpenAI dialect, images included.
+    "opencode": {"label": "OpenCode Go", "base_url": "https://opencode.ai/inference/go/v1",
+                 "model": "mimo-v2.6-flash", "vision_model": "mimo-v2.6-flash",
+                 "note": "套餐自带额度；Key 形如 oc_sk_…；模型名可换成套餐里的其它模型"},
+    # Domestic endpoints next: that is what most users of this tool can
     # actually buy, and the ones whose free tiers make a first run possible.
     "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com/v1",
                  "model": "deepseek-chat", "vision_model": "",
@@ -197,6 +203,12 @@ def probe(base_url: str, api_key: str, model: str, timeout: float = 12.0) -> tup
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}" if api_key else "",
+            # Same two headers the real client sends: some gateways reject
+            # urllib's default signature (Cloudflare 1010) and opencode's go
+            # gateway routes on a session id.
+            "User-Agent": "deck/0.1 (+https://github.com/)",
+            "Accept": "application/json",
+            "x-opencode-session": f"probe-{uuid.uuid4()}",
         },
         method="POST",
     )

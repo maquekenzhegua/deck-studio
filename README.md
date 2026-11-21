@@ -75,7 +75,7 @@ python -m deck.cli notes  samples/data --plan out/plan.json -o out/plan-notes.js
 
 ![模型设置](docs/settings.png)
 
-内置预设：DeepSeek、通义千问（DashScope）、智谱 GLM、Moonshot、豆包（方舟）、百川智能、MiniMax、SiliconFlow、OpenAI、本机 Ollama。切换只改这一个面板，不碰环境变量。
+内置预设：**OpenCode Go**（`https://opencode.ai/inference/go/v1`，默认 `mimo-v2.6-flash`，Key 形如 `oc_sk_…`，可读图）、DeepSeek、通义千问（DashScope）、智谱 GLM、Moonshot、豆包（方舟）、百川智能、MiniMax、SiliconFlow、OpenAI、本机 Ollama。切换只改这一个面板，不碰环境变量；模型名是普通输入框，套餐里换了模型直接改。
 视觉模型单独一栏，留空就沿用文本模型的地址与 Key；只有显式填了视觉模型，界面才会显示「可读图」。
 
 - 文本模型走 `deck/llm.py`（任意 OpenAI 兼容 `/chat/completions`），视觉走 `deck/vision.py`。

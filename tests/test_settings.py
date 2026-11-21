@@ -7,6 +7,8 @@ environment, and never show the key back in full.
 
 from __future__ import annotations
 
+from unittest import mock
+
 import os
 import tempfile
 import unittest
@@ -93,7 +95,7 @@ class PresetCoverageTest(unittest.TestCase):
     no way to type the endpoint from memory, so the app looks broken to them.
     """
 
-    REQUIRED = ("deepseek", "dashscope", "zhipu", "moonshot", "doubao",
+    REQUIRED = ("opencode", "deepseek", "dashscope", "zhipu", "moonshot", "doubao",
                 "baichuan", "minimax", "siliconflow", "ollama")
 
     def test_every_named_provider_has_a_usable_preset(self) -> None:
@@ -110,3 +112,27 @@ class PresetCoverageTest(unittest.TestCase):
             with self.subTest(provider=key):
                 clean = settings._clean({"base_url": preset["base_url"]})
                 self.assertEqual(clean["base_url"], preset["base_url"])
+
+
+class ProbeHeaderTest(unittest.TestCase):
+    """OpenCode Go routes on a session header and sits behind a WAF that
+    rejects urllib's default signature. The probe button has to speak the same
+    dialect as the real client or it reports a false 403."""
+
+    def test_probe_sends_session_and_user_agent(self) -> None:
+        seen: dict[str, str] = {}
+
+        class Fake:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return b'{"model": "mimo-v2.6-flash"}'
+
+        def fake_urlopen(req, timeout=0):
+            seen.update({k.lower(): v for k, v in req.header_items()})
+            return Fake()
+
+        with mock.patch("urllib.request.urlopen", fake_urlopen):
+            ok, message = settings.probe("https://opencode.ai/inference/go/v1", "oc_sk_test", "mimo-v2.6-flash")
+        self.assertTrue(ok, message)
+        self.assertTrue(seen.get("x-opencode-session", "").startswith("probe-"))
+        self.assertIn("deck", seen.get("user-agent", "").lower())
