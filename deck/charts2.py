@@ -143,7 +143,7 @@ def bar(points: list[tuple[str, float]], name: str, theme: Theme, *,
             fontsize=fs,
             color=(theme.negative if v < 0
                    else (theme.ink if v == max(vals) else theme.ink2)),
-            fontweight="600" if v == max(vals) else "normal",
+            fontweight="bold" if v == max(vals) else "normal",
         )
     ax.set_yticks(ys)
     ax.set_yticklabels(labels, fontsize=fs + 0.5, color=theme.ink)
@@ -188,7 +188,7 @@ def line(points: list[tuple[str, float]], name: str, theme: Theme, *,
             xytext=((0, 12) if not edge else (11, 0)),
             ha=("center" if not edge else "left"),
             va="center" if edge else "baseline",
-            fontsize=12, color=theme.ink, fontweight="600",
+            fontsize=12, color=theme.ink, fontweight="bold",
         )
     # An interior peak is the one thing an endpoint-only chart hides.
     if len(vals) > 6:
@@ -200,7 +200,7 @@ def line(points: list[tuple[str, float]], name: str, theme: Theme, *,
             ax.annotate("峰值 " + fmt(vals[peak]), (xs[peak], vals[peak]),
                         textcoords="offset points", xytext=(0, 17),
                         ha="center", fontsize=10.5, color=theme.accent,
-                        fontweight="600", zorder=6)
+                        fontweight="bold", zorder=6)
 
     step = max(1, len(labels) // 7)
     ax.set_xticks(xs[::step])
@@ -252,7 +252,7 @@ def donut(points: list[tuple[str, float]], name: str, theme: Theme, *,
     )
     total = sum(vals) or 1
     ax.text(0, 0.10, fmt(total), ha="center", va="center",
-            fontsize=25, color=theme.ink, fontweight="600")
+            fontsize=25, color=theme.ink, fontweight="bold")
     ax.text(0, -0.20, "合计", ha="center", va="center",
             fontsize=11, color=theme.muted)
     ax.set_aspect("equal")
@@ -328,9 +328,9 @@ def multiline(series: dict[str, list[tuple[str, float]]], name: str, theme: Them
         y_frac = (vals[-1] - lo_y) / (hi_y - lo_y)
         ax.text(-0.012, y_frac, cat, transform=ax.transAxes, ha="right", va="center",
                 fontsize=12.5, color=theme.ink if cat == lead else theme.ink2,
-                fontweight="600" if cat == lead else "400")
+                fontweight="bold" if cat == lead else "400")
         ax.text(1.004, y_frac, fmt(vals[-1]), transform=ax.transAxes, ha="left",
-                va="center", fontsize=12, color=color, fontweight="600")
+                va="center", fontsize=12, color=color, fontweight="bold")
         if i == n - 1:
             step = max(1, len(vals) // 6)
             ax.set_xticks(xs[::step])
@@ -415,7 +415,7 @@ def heatmap(rows: list[tuple[str, list[float]]], cols: list[str], name: str, the
             ax.text(j + 0.5, i + 0.52, _cell(matrix[i, j], units[j]),
                     ha="center", va="center", fontsize=12.5,
                     color="#FFFFFF" if dark else theme.ink,
-                    fontweight="600" if dark else "400")
+                    fontweight="bold" if dark else "400")
     for j, label in enumerate(cols):
         ax.text(j + 0.5, -0.24, label, ha="center", va="center",
                 fontsize=11, color=theme.muted)
