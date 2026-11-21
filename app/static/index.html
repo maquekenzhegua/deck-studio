@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deck Studio · 把资料变成一场汇报</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563EB'/%3E%3Ctext x='16' y='23' font-family='Segoe UI' font-size='19' font-weight='800' text-anchor='middle' fill='%23FFFFFF'%3ED%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="/static/theme-light.css?v=17">
+<link rel="stylesheet" href="/static/theme-light.css?v=18">
 </head>
 <body>
 <div class="app">
@@ -308,6 +308,13 @@ function renderFiles(){
   $$('.file .fx').forEach(b=>b.onclick = async (ev)=>{
     ev.stopPropagation();
     const name = b.dataset.name;
+    // Deleting is a workspace edit, not a file-system one, but a single stray
+    // click still should not remove a page's worth of evidence: arm, then go.
+    if(b.dataset.armed !== '1'){
+      b.dataset.armed = '1'; b.classList.add('arm'); b.textContent = '确认';
+      setTimeout(()=>{ if(b.isConnected){ b.dataset.armed = ''; b.classList.remove('arm'); b.textContent = '×'; } }, 2600);
+      return;
+    }
     b.disabled = true; b.textContent = '…';
     try{
       const res = await fetch('/api/file/' + encodeURIComponent(name), {method:'DELETE'});
@@ -996,7 +1003,10 @@ $('#lbNext').onclick = e=>{ e.stopPropagation(); stepLb(1); };
 document.addEventListener('keydown', e=>{
   if((e.ctrlKey || e.metaKey) && e.key === 'Enter'){ e.preventDefault(); build(false, true); }
   if((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')){ e.preventDefault(); if(S.pages.length) exportDeck('desktop'); }
-  if(e.key === 'Escape'){ $('#lightbox').classList.remove('on'); hideProblems(); closeSettings(); }
+  if(e.key === 'Escape'){
+    $('#lightbox').classList.remove('on'); hideProblems(); closeSettings();
+    ['#ideaSheet', '#reviewSheet', '#readySheet'].forEach(id=>{ const el=$(id); if(el) el.style.display = 'none'; });
+  }
   if($('#lightbox').classList.contains('on')){
     if(e.key === 'ArrowLeft') stepLb(-1);
     if(e.key === 'ArrowRight') stepLb(1);
