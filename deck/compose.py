@@ -772,7 +772,9 @@ def draft_pictures(bundle) -> Plan:
             # Digits in a title have to be backed by a fact; an ordinal is
             # not a number, so it is spelled the way a person would say it.
             cn = "一二三四五六七八九"
-            label = f"{label} · 第{cn[i - 1] if i <= 9 else i}张"
+            # "第二张：区域分布" reads as an order; "区域分布 · 第二张" reads
+            # like a filename with a suffix.
+            label = f"第{cn[i - 1] if i <= 9 else i}张：{label}"
         if kind in ("photo", ""):
             slides.append(Slide("image_full", label, image=pic.id,
                                 note="现场照片直接铺满整页：它提供的是语境，不是数据。"))
