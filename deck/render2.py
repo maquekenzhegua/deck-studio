@@ -1491,29 +1491,33 @@ def quote(prs, plan: Plan, s: Slide, facts: dict[str, Fact], theme: Theme,
     add_gradient(slide, 0, 0, SLIDE_W, SLIDE_H,
                  _rgb(theme.dark), _mix(theme.dark, theme.accent, 0.18), angle=160)
 
-    add_text(slide, MARGIN_X, Inches(1.02), Inches(1.4), Inches(1.0),
-             "“", theme, size=Pt(150), color=_mix(theme.dark, theme.accent, 0.55),
-             bold=True, font="headline", line_spacing=1.0)
-
     text = subst(s.title, facts)
-    size = _fit(text, Inches(10.4), Inches(3.4), 40, 24, 1.42)
+    size = _fit(text, Inches(9.10), Inches(3.5), 48, 26, 1.40)
     # Keep the line length readable: a quote set too wide loses its rhythm.
     # Break at punctuation, not at the width limit: "华北 / 东北" is one pair
     # and splitting it makes the reader reassemble the sentence.
-    lines = _wrap_clauses(text, Inches(10.2), size.pt)
+    lines = _wrap_clauses(text, Inches(9.00), size.pt)
     # Optically centre the quote between the mark and the attribution: a
     # two-line quote pinned to 2.02in leaves a hole under it.
     n = lines.count("\n") + 1
     block = n * size.pt * 1.42 / 72
-    top = 1.95 + max(0.0, (3.60 - block) / 2)
-    add_text(slide, MARGIN_X, Inches(top), Inches(10.6), Inches(3.5),
+    # Mark, words and attribution are one object: centring the words alone
+    # left the quotation mark stranded in the top margin and a hole beneath.
+    group = 0.86 + block + 0.92
+    top = 0.92 + max(0.0, (5.66 - group) / 2)
+    add_text(slide, MARGIN_X - Inches(0.04), Inches(top), Inches(1.4), Inches(0.9),
+             "“", theme, size=Pt(120), color=_mix(theme.dark, theme.accent, 0.55),
+             bold=True, font="headline", line_spacing=1.0)
+    text_top = top + 0.86
+    add_text(slide, MARGIN_X, Inches(text_top), Inches(10.6), Inches(3.5),
              lines, theme, size=size, color=_rgb(theme.dark_ink),
              font="headline", line_spacing=1.42)
 
-    add_rect(slide, MARGIN_X, Inches(5.94), Inches(0.86), Emu(38100),
+    rule_top = text_top + block + 0.52
+    add_rect(slide, MARGIN_X, Inches(rule_top), Inches(0.86), Emu(38100),
              _rgb(theme.accent))
     if s.note:
-        add_text(slide, MARGIN_X, Inches(6.14), Inches(7.4), Inches(0.30),
+        add_text(slide, MARGIN_X, Inches(rule_top + 0.20), Inches(7.4), Inches(0.30),
                  subst(s.note, facts), theme, size=Pt(11.5),
                  color=_rgb(theme.dark_muted))
     page_number(slide, idx, theme, total)
